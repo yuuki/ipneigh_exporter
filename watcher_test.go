@@ -27,7 +27,7 @@ func TestWatcher_ProcessesEvents(t *testing.T) {
 
 	w := NewWatcher(source, store, testLogger())
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 	defer cancel()
 
 	err := w.Run(ctx)

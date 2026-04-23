@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -86,12 +87,12 @@ func main() {
 	go store.RunGC(ctx)
 
 	mux := http.NewServeMux()
-	mux.Handle(*metricsPath, promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+	mux.Handle("GET "+*metricsPath, promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprint(w, "ok")
 	})
-	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
 		if watcher.Ready() {
 			w.WriteHeader(http.StatusOK)
 			fmt.Fprint(w, "ok")
@@ -100,7 +101,7 @@ func main() {
 			fmt.Fprint(w, "not ready")
 		}
 	})
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, `<html><body>
 <h1>ipneigh_exporter</h1>
 <p><a href="%s">Metrics</a></p>
@@ -113,12 +114,14 @@ func main() {
 		<-ctx.Done()
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer shutdownCancel()
-		server.Shutdown(shutdownCtx)
+		if err := server.Shutdown(shutdownCtx); err != nil {
+			logger.Error("http server shutdown error", "error", err)
+		}
 	}()
 
 	logger.Info("starting ipneigh_exporter",
 		"listen", *listenAddr, "version", version, "revision", revision)
-	if err := server.ListenAndServe(); err != http.ErrServerClosed {
+	if err := server.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
 		logger.Error("http server error", "error", err)
 		os.Exit(1)
 	}

@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/netip"
 	"regexp"
+	"slices"
 	"sync"
 	"syscall"
 	"time"
@@ -217,10 +218,7 @@ func (s *NeighborStore) Snapshot() map[NeighborKey]*NeighborEntry {
 	snap := make(map[NeighborKey]*NeighborEntry, len(s.entries))
 	for k, v := range s.entries {
 		cp := *v
-		if v.MAC != nil {
-			cp.MAC = make(net.HardwareAddr, len(v.MAC))
-			copy(cp.MAC, v.MAC)
-		}
+		cp.MAC = slices.Clone(v.MAC)
 		snap[k] = &cp
 	}
 	return snap
