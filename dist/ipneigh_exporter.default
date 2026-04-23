@@ -1,0 +1,4 @@
+# Options for ipneigh_exporter
+# See ipneigh_exporter --help for all options.
+#
+# ARGS="--web.listen-address=:9144 --log.level=info"
