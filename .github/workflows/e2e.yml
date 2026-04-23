@@ -1,0 +1,46 @@
+name: E2E
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - uses: lima-vm/lima-actions/setup@v1
+        id: lima-setup
+
+      - name: Prepare /tmp/lima mount dir
+        run: mkdir -p /tmp/lima
+
+      - name: Start Lima VM
+        run: make e2e-setup
+
+      - name: Run e2e tests
+        run: ./e2e/run.sh
+
+      - name: Dump VM logs on failure
+        if: failure()
+        run: |
+          limactl list
+          limactl shell ipneigh-e2e sudo journalctl -n 200 --no-pager || true
+
+      - name: Teardown
+        if: always()
+        run: make e2e-teardown
