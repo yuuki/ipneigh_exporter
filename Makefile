@@ -21,6 +21,7 @@ clean:
 	rm -f ipneigh_exporter
 
 e2e-setup:
+	mkdir -p /tmp/lima
 	limactl start --name=$(E2E_VM_NAME) e2e/lima.yaml --tty=false 2>/dev/null || \
 		limactl start $(E2E_VM_NAME) --tty=false
 
