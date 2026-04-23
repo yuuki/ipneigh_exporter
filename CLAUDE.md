@@ -59,4 +59,4 @@ Key design constraints:
 ## Runtime Requirements
 
 - Linux with `CAP_NET_ADMIN` (for rtnetlink neighbor subscription)
-- systemd unit in `dist/` uses `DynamicUser=yes` + `AmbientCapabilities=CAP_NET_ADMIN`
+- systemd unit in `packaging/` uses `DynamicUser=yes` + `AmbientCapabilities=CAP_NET_ADMIN`

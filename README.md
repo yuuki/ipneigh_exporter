@@ -42,8 +42,8 @@ curl http://localhost:9144/metrics
 
 ```bash
 sudo cp ipneigh_exporter /usr/local/bin/
-sudo cp dist/ipneigh_exporter.service /etc/systemd/system/
-sudo cp dist/ipneigh_exporter.default /etc/default/ipneigh_exporter
+sudo cp packaging/ipneigh_exporter.service /etc/systemd/system/
+sudo cp packaging/ipneigh_exporter.default /etc/default/ipneigh_exporter
 sudo systemctl daemon-reload
 sudo systemctl enable --now ipneigh_exporter
 ```
