@@ -93,7 +93,7 @@ func NewNeighborStore(config StoreConfig, resolver LinkResolver, logger *slog.Lo
 func (s *NeighborStore) HandleEvent(ev NeighborEvent) {
 	devName := s.resolveLink(ev.LinkIndex)
 	if devName == "" {
-		s.errorsTotal.WithLabelValues("link_resolve").Inc()
+		s.RecordError("link_resolve")
 		return
 	}
 
@@ -259,6 +259,10 @@ func (s *NeighborStore) CollectCounters(ch chan<- prometheus.Metric) {
 	s.flapCounter.Collect(ch)
 	s.eventsTotal.Collect(ch)
 	s.errorsTotal.Collect(ch)
+}
+
+func (s *NeighborStore) RecordError(stage string) {
+	s.errorsTotal.WithLabelValues(stage).Inc()
 }
 
 func (s *NeighborStore) deviceAllowed(name string) bool {

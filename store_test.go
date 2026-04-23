@@ -372,3 +372,18 @@ func TestFamilyString(t *testing.T) {
 		t.Error("AF_INET6 should be ipv6")
 	}
 }
+
+func TestRecordError(t *testing.T) {
+	s := testStore(t)
+
+	s.RecordError("netlink_parse")
+	s.RecordError("netlink_receive")
+	s.RecordError("netlink_receive")
+
+	if got := counterValue(s.errorsTotal, "netlink_parse"); got != 1 {
+		t.Fatalf("expected netlink_parse=1, got %f", got)
+	}
+	if got := counterValue(s.errorsTotal, "netlink_receive"); got != 2 {
+		t.Fatalf("expected netlink_receive=2, got %f", got)
+	}
+}

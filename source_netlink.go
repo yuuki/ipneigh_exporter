@@ -13,11 +13,12 @@ import (
 )
 
 type NetlinkSource struct {
-	logger *slog.Logger
+	logger      *slog.Logger
+	recordError func(string)
 }
 
-func NewNetlinkSource(logger *slog.Logger) *NetlinkSource {
-	return &NetlinkSource{logger: logger}
+func NewNetlinkSource(logger *slog.Logger, recordError func(string)) *NetlinkSource {
+	return &NetlinkSource{logger: logger, recordError: recordError}
 }
 
 func (s *NetlinkSource) Subscribe(ctx context.Context) (<-chan NeighborEvent, error) {
@@ -46,6 +47,7 @@ func (s *NetlinkSource) Subscribe(ctx context.Context) (<-chan NeighborEvent, er
 				}
 				ev, err := convertNeighUpdate(u)
 				if err != nil {
+					s.recordStageError("netlink_parse")
 					s.logger.Debug("skipping neighbor update", "error", err)
 					continue
 				}
@@ -62,6 +64,7 @@ func (s *NetlinkSource) Subscribe(ctx context.Context) (<-chan NeighborEvent, er
 }
 
 func (s *NetlinkSource) errorCallback(err error) {
+	s.recordStageError("netlink_receive")
 	s.logger.Error("netlink subscription error", "error", err)
 }
 

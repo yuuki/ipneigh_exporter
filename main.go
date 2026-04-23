@@ -64,7 +64,7 @@ func main() {
 	}
 
 	store := NewNeighborStore(config, &NetlinkResolver{}, logger)
-	source := NewNetlinkSource(logger)
+	source := NewNetlinkSource(logger, store.RecordError)
 	watcher := NewWatcher(source, store, logger)
 	collector := NewNeighborCollector(store)
 

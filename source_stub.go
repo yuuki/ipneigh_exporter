@@ -10,11 +10,12 @@ import (
 )
 
 type NetlinkSource struct {
-	logger *slog.Logger
+	logger      *slog.Logger
+	recordError func(string)
 }
 
-func NewNetlinkSource(logger *slog.Logger) *NetlinkSource {
-	return &NetlinkSource{logger: logger}
+func NewNetlinkSource(logger *slog.Logger, recordError func(string)) *NetlinkSource {
+	return &NetlinkSource{logger: logger, recordError: recordError}
 }
 
 func (s *NetlinkSource) Subscribe(_ context.Context) (<-chan NeighborEvent, error) {
