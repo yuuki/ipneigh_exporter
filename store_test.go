@@ -236,6 +236,39 @@ func TestHandleEvent_DeleteGraceExpired_NoFlap(t *testing.T) {
 	}
 }
 
+func TestHandleEvent_DeleteGraceExpired_IncompleteThenDifferentMAC_NoFlap(t *testing.T) {
+	s := testStore(t)
+	baseTime := time.Now()
+	s.now = func() time.Time { return baseTime }
+
+	s.HandleEvent(NeighborEvent{
+		Type: RTM_NEWNEIGH, LinkIndex: 1, Family: syscall.AF_INET,
+		IP: ip("10.0.0.1"), HardwareAddr: mac("aa:bb:cc:dd:ee:01"), State: NUD_REACHABLE,
+	})
+
+	s.now = func() time.Time { return baseTime.Add(1 * time.Second) }
+	s.HandleEvent(NeighborEvent{
+		Type: RTM_DELNEIGH, LinkIndex: 1, Family: syscall.AF_INET,
+		IP: ip("10.0.0.1"), State: 0,
+	})
+
+	s.now = func() time.Time { return baseTime.Add(1*time.Minute + 1*time.Second) }
+	s.HandleEvent(NeighborEvent{
+		Type: RTM_NEWNEIGH, LinkIndex: 1, Family: syscall.AF_INET,
+		IP: ip("10.0.0.1"), HardwareAddr: nil, State: NUD_INCOMPLETE,
+	})
+	s.HandleEvent(NeighborEvent{
+		Type: RTM_NEWNEIGH, LinkIndex: 1, Family: syscall.AF_INET,
+		IP: ip("10.0.0.1"), HardwareAddr: mac("aa:bb:cc:dd:ee:02"), State: NUD_REACHABLE,
+	})
+
+	snap := s.Snapshot()
+	key := NeighborKey{Dev: 1, IP: ip("10.0.0.1"), Family: syscall.AF_INET}
+	if snap[key].FlapCount != 0 {
+		t.Error("after grace expired, INCOMPLETE then different MAC should not be a flap")
+	}
+}
+
 func TestHandleEvent_DifferentDevices_Independent(t *testing.T) {
 	s := testStore(t)
 	s.HandleEvent(NeighborEvent{

@@ -144,6 +144,7 @@ func (s *NeighborStore) HandleEvent(ev NeighborEvent) {
 
 	if entry.Deleted && !now.Before(entry.DeletedAt.Add(s.config.DeleteGrace)) {
 		oldMAC = nil
+		entry.MAC = nil
 	}
 
 	entry.Deleted = false
