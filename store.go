@@ -146,7 +146,9 @@ func (s *NeighborStore) HandleEvent(ev NeighborEvent) {
 	}
 
 	entry.Deleted = false
-	entry.MAC = newMAC
+	if len(newMAC) > 0 {
+		entry.MAC = newMAC
+	}
 	entry.State = ev.State
 	entry.DevName = devName
 	entry.VRFName = vrfName

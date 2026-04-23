@@ -1,0 +1,22 @@
+images:
+  - location: "https://dl.rockylinux.org/pub/rocky/9/images/aarch64/Rocky-9-GenericCloud-Base.latest.aarch64.qcow2"
+    arch: "aarch64"
+  - location: "https://dl.rockylinux.org/pub/rocky/9/images/x86_64/Rocky-9-GenericCloud-Base.latest.x86_64.qcow2"
+    arch: "x86_64"
+
+cpus: 2
+memory: "2GiB"
+disk: "10GiB"
+
+mounts:
+  - location: "~"
+    writable: false
+  - location: "/tmp/lima"
+    writable: true
+
+provision:
+  - mode: system
+    script: |
+      #!/bin/bash
+      set -eux -o pipefail
+      dnf install -y iproute curl

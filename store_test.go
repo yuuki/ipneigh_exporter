@@ -180,6 +180,33 @@ func TestHandleEvent_DeleteAndReaddDifferentMAC_Flap(t *testing.T) {
 	}
 }
 
+func TestHandleEvent_DeleteIncompleteReaddDifferentMAC_Flap(t *testing.T) {
+	s := testStore(t)
+	s.HandleEvent(NeighborEvent{
+		Type: RTM_NEWNEIGH, LinkIndex: 1, Family: syscall.AF_INET,
+		IP: ip("10.0.0.1"), HardwareAddr: mac("aa:bb:cc:dd:ee:01"), State: NUD_REACHABLE,
+	})
+	s.HandleEvent(NeighborEvent{
+		Type: RTM_DELNEIGH, LinkIndex: 1, Family: syscall.AF_INET,
+		IP: ip("10.0.0.1"), State: 0,
+	})
+	// Kernel auto-resolves with INCOMPLETE (no MAC) after delete
+	s.HandleEvent(NeighborEvent{
+		Type: RTM_NEWNEIGH, LinkIndex: 1, Family: syscall.AF_INET,
+		IP: ip("10.0.0.1"), HardwareAddr: nil, State: NUD_INCOMPLETE,
+	})
+	s.HandleEvent(NeighborEvent{
+		Type: RTM_NEWNEIGH, LinkIndex: 1, Family: syscall.AF_INET,
+		IP: ip("10.0.0.1"), HardwareAddr: mac("aa:bb:cc:dd:ee:02"), State: NUD_REACHABLE,
+	})
+
+	snap := s.Snapshot()
+	key := NeighborKey{Dev: 1, IP: ip("10.0.0.1"), Family: syscall.AF_INET}
+	if snap[key].FlapCount != 1 {
+		t.Errorf("expected 1 flap despite INCOMPLETE in between, got %d", snap[key].FlapCount)
+	}
+}
+
 func TestHandleEvent_DeleteGraceExpired_NoFlap(t *testing.T) {
 	s := testStore(t)
 	baseTime := time.Now()
