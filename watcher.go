@@ -2,9 +2,12 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"sync/atomic"
 )
+
+var errNeighborEventChannelClosed = errors.New("neighbor event channel closed")
 
 type Watcher struct {
 	source NeighborSource
@@ -36,7 +39,7 @@ func (w *Watcher) Run(ctx context.Context) error {
 		case ev, ok := <-ch:
 			if !ok {
 				w.logger.Warn("neighbor event channel closed")
-				return nil
+				return errNeighborEventChannelClosed
 			}
 			w.ready.Store(true)
 			w.store.HandleEvent(ev)

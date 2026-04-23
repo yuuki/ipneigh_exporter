@@ -77,9 +77,11 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
+	watcherErrCh := make(chan error, 1)
 	go func() {
 		if err := watcher.Run(ctx); err != nil && ctx.Err() == nil {
 			logger.Error("watcher failed", "error", err)
+			watcherErrCh <- err
 			cancel()
 		}
 	}()
@@ -124,6 +126,11 @@ func main() {
 	if err := server.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
 		logger.Error("http server error", "error", err)
 		os.Exit(1)
+	}
+	select {
+	case <-watcherErrCh:
+		os.Exit(1)
+	default:
 	}
 }
 
