@@ -21,5 +21,33 @@ archives:
       - packaging/ipneigh_exporter.service
       - packaging/ipneigh_exporter.default
 
+dockers:
+  - image_templates:
+      - ghcr.io/yuuki/ipneigh_exporter:{{ .Tag }}-amd64
+    use: buildx
+    dockerfile: Dockerfile.goreleaser
+    build_flag_templates:
+      - --platform=linux/amd64
+    goarch: amd64
+
+  - image_templates:
+      - ghcr.io/yuuki/ipneigh_exporter:{{ .Tag }}-arm64
+    use: buildx
+    dockerfile: Dockerfile.goreleaser
+    build_flag_templates:
+      - --platform=linux/arm64
+    goarch: arm64
+
+docker_manifests:
+  - name_template: ghcr.io/yuuki/ipneigh_exporter:{{ .Tag }}
+    image_templates:
+      - ghcr.io/yuuki/ipneigh_exporter:{{ .Tag }}-amd64
+      - ghcr.io/yuuki/ipneigh_exporter:{{ .Tag }}-arm64
+
+  - name_template: ghcr.io/yuuki/ipneigh_exporter:latest
+    image_templates:
+      - ghcr.io/yuuki/ipneigh_exporter:{{ .Tag }}-amd64
+      - ghcr.io/yuuki/ipneigh_exporter:{{ .Tag }}-arm64
+
 checksum:
   name_template: checksums.txt

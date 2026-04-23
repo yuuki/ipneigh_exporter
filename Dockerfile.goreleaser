@@ -1,0 +1,4 @@
+FROM scratch
+COPY ipneigh_exporter /ipneigh_exporter
+EXPOSE 9144
+ENTRYPOINT ["/ipneigh_exporter"]
