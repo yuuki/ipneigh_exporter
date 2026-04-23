@@ -29,9 +29,13 @@ func TestWatcher_ProcessesEvents(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 	defer cancel()
 
+	readyObserved := make(chan struct{}, 1)
 	go func() {
 		for {
 			if len(store.Snapshot()) == 2 {
+				if w.Ready() {
+					readyObserved <- struct{}{}
+				}
 				cancel()
 				return
 			}
@@ -49,8 +53,10 @@ func TestWatcher_ProcessesEvents(t *testing.T) {
 		t.Errorf("expected 2 entries, got %d", len(snap))
 	}
 
-	if !w.Ready() {
-		t.Error("watcher should be ready after processing events")
+	select {
+	case <-readyObserved:
+	default:
+		t.Error("watcher should be ready while processing events")
 	}
 }
 
@@ -70,5 +76,33 @@ func TestWatcher_SubscribeError_ReturnsError(t *testing.T) {
 	err := w.Run(t.Context())
 	if !errors.Is(err, want) {
 		t.Fatalf("expected %v, got %v", want, err)
+	}
+}
+
+func TestWatcher_ReadyAfterSubscribeBeforeFirstEvent(t *testing.T) {
+	ch := make(chan NeighborEvent)
+	w := NewWatcher(&channelSource{ch: ch}, testStore(t), testLogger())
+
+	ctx, cancel := context.WithCancel(t.Context())
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- w.Run(ctx)
+	}()
+
+	deadline := time.After(500 * time.Millisecond)
+	for !w.Ready() {
+		select {
+		case <-deadline:
+			t.Fatal("watcher did not become ready after subscribe")
+		default:
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+
+	cancel()
+
+	err := <-errCh
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context cancellation, got %v", err)
 	}
 }

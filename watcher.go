@@ -29,6 +29,8 @@ func (w *Watcher) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	w.ready.Store(true)
+	defer w.ready.Store(false)
 
 	w.logger.Info("watching neighbor events")
 
@@ -41,7 +43,6 @@ func (w *Watcher) Run(ctx context.Context) error {
 				w.logger.Warn("neighbor event channel closed")
 				return errNeighborEventChannelClosed
 			}
-			w.ready.Store(true)
 			w.store.HandleEvent(ev)
 		}
 	}
