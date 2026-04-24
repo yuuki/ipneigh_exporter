@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/netip"
@@ -11,6 +12,8 @@ import (
 
 	"github.com/vishvananda/netlink"
 )
+
+var errSkipNeighborEvent = errors.New("skip non-IP neighbor event")
 
 type NetlinkSource struct {
 	logger      *slog.Logger
@@ -47,6 +50,10 @@ func (s *NetlinkSource) Subscribe(ctx context.Context) (<-chan NeighborEvent, er
 				}
 				ev, err := convertNeighUpdate(u)
 				if err != nil {
+					if errors.Is(err, errSkipNeighborEvent) {
+						s.logger.Debug("skipping non-IP neighbor update")
+						continue
+					}
 					s.recordStageError("netlink_parse")
 					s.logger.Debug("skipping neighbor update", "error", err)
 					continue
@@ -79,6 +86,9 @@ func (r *NetlinkResolver) LinkName(index int) (string, error) {
 }
 
 func convertNeighUpdate(u netlink.NeighUpdate) (NeighborEvent, error) {
+	if u.Family != syscall.AF_INET && u.Family != syscall.AF_INET6 {
+		return NeighborEvent{}, errSkipNeighborEvent
+	}
 	if u.IP == nil {
 		return NeighborEvent{}, fmt.Errorf("nil IP in neighbor update")
 	}
@@ -88,16 +98,11 @@ func convertNeighUpdate(u netlink.NeighUpdate) (NeighborEvent, error) {
 	}
 	addr = addr.Unmap()
 
-	family := syscall.AF_INET
-	if addr.Is6() {
-		family = syscall.AF_INET6
-	}
-
 	return NeighborEvent{
 		Type:         u.Type,
 		LinkIndex:    u.LinkIndex,
 		MasterIndex:  u.MasterIndex,
-		Family:       family,
+		Family:       u.Family,
 		IP:           addr,
 		HardwareAddr: u.HardwareAddr,
 		State:        u.State,
