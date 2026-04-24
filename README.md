@@ -167,6 +167,23 @@ groups:
           severity: warning
 ```
 
+## Grafana Dashboard
+
+A public dashboard template is available at
+[`dashboards/ipneigh-exporter.json`](dashboards/ipneigh-exporter.json).
+
+To import it:
+
+1. Open Grafana and go to **Dashboards** -> **New** -> **Import**.
+2. Upload the JSON file or paste its contents.
+3. Select your Prometheus datasource for the `DS_PROMETHEUS` variable.
+4. Select the scrape job that collects `ipneigh_exporter` in the `job` filter.
+5. Filter by `instance`, `dev`, `vrf`, or `family` as needed.
+
+The dashboard includes exporter status, current neighbour entries, MAC flap
+activity, last flap timestamps, event rates, errors, and rate-limited flap
+counts.
+
 ## Failure Modes
 
 | Scenario | Behavior |
@@ -205,5 +222,4 @@ groups:
 - Multiple network namespace support
 - `ip monitor neigh` fallback backend (NeighborSource interface allows swapping)
 - `/debug/neighbors` JSON endpoint for operational debugging
-- Grafana dashboard
 - deb/rpm packaging
