@@ -79,7 +79,7 @@ func TestWatcher_SubscribeError_ReturnsError(t *testing.T) {
 	}
 }
 
-func TestWatcher_ReadyAfterSubscribeBeforeFirstEvent(t *testing.T) {
+func TestWatcher_NotReadyUntilFirstEventProcessed(t *testing.T) {
 	ch := make(chan NeighborEvent)
 	w := NewWatcher(&channelSource{ch: ch}, testStore(t), testLogger())
 
@@ -93,7 +93,25 @@ func TestWatcher_ReadyAfterSubscribeBeforeFirstEvent(t *testing.T) {
 	for !w.Ready() {
 		select {
 		case <-deadline:
-			t.Fatal("watcher did not become ready after subscribe")
+			goto stillNotReady
+		default:
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+	t.Fatal("watcher became ready before processing an event")
+
+stillNotReady:
+	ch <- NeighborEvent{
+		Type: RTM_NEWNEIGH, LinkIndex: 1, Family: syscall.AF_INET,
+		IP: ip("10.0.0.1"), HardwareAddr: mac("aa:bb:cc:dd:ee:01"),
+		State: NUD_REACHABLE,
+	}
+
+	deadline = time.After(500 * time.Millisecond)
+	for !w.Ready() {
+		select {
+		case <-deadline:
+			t.Fatal("watcher did not become ready after processing an event")
 		default:
 			time.Sleep(10 * time.Millisecond)
 		}
