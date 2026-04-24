@@ -387,3 +387,22 @@ func TestRecordError(t *testing.T) {
 		t.Fatalf("expected netlink_receive=2, got %f", got)
 	}
 }
+
+func TestResolveLinkUsesCurrentLinkName(t *testing.T) {
+	resolver := &mockResolver{names: map[int]string{1: "veth-old"}}
+	s := NewNeighborStore(StoreConfig{
+		StaleTTL:    15 * time.Minute,
+		DeleteGrace: 30 * time.Second,
+		FlapRate:    rate.Limit(10),
+		FlapBurst:   5,
+	}, resolver, testLogger())
+
+	if got := s.resolveLink(1); got != "veth-old" {
+		t.Fatalf("expected initial link name veth-old, got %q", got)
+	}
+
+	resolver.names[1] = "veth-new"
+	if got := s.resolveLink(1); got != "veth-new" {
+		t.Fatalf("expected refreshed link name veth-new, got %q", got)
+	}
+}

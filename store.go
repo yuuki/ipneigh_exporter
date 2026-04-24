@@ -53,8 +53,7 @@ type NeighborStore struct {
 	entries      map[NeighborKey]*NeighborEntry
 	flapLimiters map[NeighborKey]*rate.Limiter
 
-	linkMu    sync.RWMutex
-	linkNames map[int]string
+	linkMu sync.Mutex
 
 	flapCounter *prometheus.CounterVec
 	eventsTotal *prometheus.CounterVec
@@ -69,7 +68,6 @@ type NeighborStore struct {
 func NewNeighborStore(config StoreConfig, resolver LinkResolver, logger *slog.Logger) *NeighborStore {
 	return &NeighborStore{
 		entries:      make(map[NeighborKey]*NeighborEntry),
-		linkNames:    make(map[int]string),
 		flapLimiters: make(map[NeighborKey]*rate.Limiter),
 		flapCounter: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "linux_neighbor_mac_change_total",
@@ -229,12 +227,10 @@ func (s *NeighborStore) resolveLink(index int) string {
 	if index == 0 {
 		return ""
 	}
-	s.linkMu.RLock()
-	name, ok := s.linkNames[index]
-	s.linkMu.RUnlock()
-	if ok {
-		return name
-	}
+
+	s.linkMu.Lock()
+	defer s.linkMu.Unlock()
+
 	name, err := s.linkResolver.LinkName(index)
 	if err != nil {
 		s.logger.Debug("failed to resolve link", "index", index, "error", err)
@@ -243,9 +239,6 @@ func (s *NeighborStore) resolveLink(index int) string {
 	if name == "" {
 		return ""
 	}
-	s.linkMu.Lock()
-	s.linkNames[index] = name
-	s.linkMu.Unlock()
 	return name
 }
 
