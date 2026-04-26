@@ -228,3 +228,7 @@ stored in `NeighborStore`, and exposed as Prometheus metrics at scrape time.
 - `ip monitor neigh` fallback backend (NeighborSource interface allows swapping)
 - `/debug/neighbors` JSON endpoint for operational debugging
 - deb/rpm packaging
+
+## License
+
+MIT License. See [LICENSE](LICENSE) for details.
