@@ -5,9 +5,12 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 VM_NAME="ipneigh-e2e"
 LISTEN_PORT=9144
-EXPORTER_PATH="/tmp/lima/ipneigh_exporter"
+EXPORTER_PATH="/tmp/ipneigh_exporter"
+HOST_BINARY="$(mktemp -t ipneigh_exporter.XXXXXX)"
 PASSED=0
 FAILED=0
+
+trap 'rm -f "$HOST_BINARY"' EXIT
 
 cleanup() {
     echo "--- cleanup ---"
@@ -46,7 +49,9 @@ assert_no_match() {
 # --- Build ---
 echo "=== Building for Linux ==="
 GOARCH=$(lima_shell uname -m 2>/dev/null | sed 's/aarch64/arm64/;s/x86_64/amd64/')
-(cd "$PROJECT_DIR" && GOOS=linux GOARCH="$GOARCH" CGO_ENABLED=0 go build -o /tmp/lima/ipneigh_exporter .)
+(cd "$PROJECT_DIR" && GOOS=linux GOARCH="$GOARCH" CGO_ENABLED=0 go build -o "$HOST_BINARY" .)
+limactl copy "$HOST_BINARY" "$VM_NAME:$EXPORTER_PATH"
+lima_shell chmod +x "$EXPORTER_PATH"
 echo "Built binary for linux/$GOARCH"
 
 # --- Setup ---
