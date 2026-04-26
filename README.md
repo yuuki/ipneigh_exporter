@@ -196,6 +196,11 @@ counts.
 
 ## Architecture
 
+![ipneigh_exporter overview](docs/images/ipneigh-exporter-overview.png)
+
+High-level data flow: rtnetlink neighbour events are consumed by the watcher,
+stored in `NeighborStore`, and exposed as Prometheus metrics at scrape time.
+
 ```
 ┌──────────────┐     NeighborEvent     ┌──────────────┐
 │ NetlinkSource│ ──────────────────▶   │ NeighborStore│
