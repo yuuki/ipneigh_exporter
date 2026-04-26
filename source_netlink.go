@@ -29,8 +29,10 @@ func (s *NetlinkSource) Subscribe(ctx context.Context) (<-chan NeighborEvent, er
 	done := make(chan struct{})
 
 	if err := netlink.NeighSubscribeWithOptions(updates, done, netlink.NeighSubscribeOptions{
-		ListExisting:  true,
-		ErrorCallback: s.errorCallback,
+		ListExisting: true,
+		ErrorCallback: func(err error) {
+			s.handleSubscriptionError(ctx, err)
+		},
 	}); err != nil {
 		return nil, fmt.Errorf("netlink subscribe: %w", err)
 	}
@@ -68,11 +70,6 @@ func (s *NetlinkSource) Subscribe(ctx context.Context) (<-chan NeighborEvent, er
 	}()
 
 	return out, nil
-}
-
-func (s *NetlinkSource) errorCallback(err error) {
-	s.recordStageError("netlink_receive")
-	s.logger.Error("netlink subscription error", "error", err)
 }
 
 type NetlinkResolver struct{}
