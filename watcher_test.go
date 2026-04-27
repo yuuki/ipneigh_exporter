@@ -124,3 +124,96 @@ stillNotReady:
 		t.Fatalf("expected context cancellation, got %v", err)
 	}
 }
+
+func TestWatcher_PeriodicSyncRefreshesBeforePurge(t *testing.T) {
+	store := testStore(t)
+	store.config.SyncInterval = 20 * time.Millisecond
+
+	baseTime := time.Now()
+	store.now = func() time.Time { return baseTime }
+	store.HandleEvent(NeighborEvent{
+		Type: RTM_NEWNEIGH, LinkIndex: 1, Family: syscall.AF_INET,
+		IP: ip("10.0.0.1"), HardwareAddr: mac("aa:bb:cc:dd:ee:01"),
+		State: NUD_STALE,
+	})
+
+	store.now = func() time.Time { return baseTime.Add(2 * time.Minute) }
+	ch := make(chan NeighborEvent)
+	source := &channelSource{
+		ch: ch,
+		list: []NeighborEvent{{
+			Type: RTM_NEWNEIGH, LinkIndex: 1, Family: syscall.AF_INET,
+			IP: ip("10.0.0.1"), HardwareAddr: mac("aa:bb:cc:dd:ee:01"),
+			State: NUD_REACHABLE,
+		}},
+	}
+	w := NewWatcher(source, store, testLogger())
+
+	ctx, cancel := context.WithCancel(t.Context())
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- w.Run(ctx)
+	}()
+
+	deadline := time.After(500 * time.Millisecond)
+	for {
+		snap := store.Snapshot()
+		entry := snap[NeighborKey{Dev: 1, IP: ip("10.0.0.1"), Family: syscall.AF_INET}]
+		if entry != nil && entry.State == NUD_REACHABLE {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("entry was not refreshed by periodic sync")
+		default:
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+
+	cancel()
+	if err := <-errCh; !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context cancellation, got %v", err)
+	}
+}
+
+func TestWatcher_SyncErrorDoesNotPurge(t *testing.T) {
+	store := testStore(t)
+	store.config.SyncInterval = 20 * time.Millisecond
+
+	baseTime := time.Now()
+	store.now = func() time.Time { return baseTime }
+	store.HandleEvent(NeighborEvent{
+		Type: RTM_NEWNEIGH, LinkIndex: 1, Family: syscall.AF_INET,
+		IP: ip("10.0.0.1"), HardwareAddr: mac("aa:bb:cc:dd:ee:01"),
+		State: NUD_STALE,
+	})
+
+	store.now = func() time.Time { return baseTime.Add(2 * time.Minute) }
+	ch := make(chan NeighborEvent)
+	w := NewWatcher(&channelSource{ch: ch, listErr: errors.New("list failed")}, store, testLogger())
+
+	ctx, cancel := context.WithCancel(t.Context())
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- w.Run(ctx)
+	}()
+
+	deadline := time.After(500 * time.Millisecond)
+	for counterValue(store.errorsTotal, "netlink_list") == 0 {
+		select {
+		case <-deadline:
+			t.Fatal("expected netlink_list error to be recorded")
+		default:
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+
+	if len(store.Snapshot()) != 1 {
+		t.Fatal("sync failure should not purge stale entries")
+	}
+
+	cancel()
+	if err := <-errCh; !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context cancellation, got %v", err)
+	}
+}

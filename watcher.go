@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"sync/atomic"
+	"time"
 )
 
 var errNeighborEventChannelClosed = errors.New("neighbor event channel closed")
@@ -33,10 +34,28 @@ func (w *Watcher) Run(ctx context.Context) error {
 
 	w.logger.Info("watching neighbor events")
 
+	var syncC <-chan time.Time
+	var syncTicker *time.Ticker
+	if w.store.config.SyncInterval > 0 {
+		syncTicker = time.NewTicker(w.store.config.SyncInterval)
+		defer syncTicker.Stop()
+		syncC = syncTicker.C
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
+		case <-syncC:
+			events, err := w.source.List(ctx)
+			if err != nil {
+				w.store.RecordError("netlink_list")
+				w.logger.Error("neighbor sync failed", "error", err)
+				continue
+			}
+			w.store.SyncNeighbors(events)
+			w.store.gc()
+			w.ready.Store(true)
 		case ev, ok := <-ch:
 			if !ok {
 				w.logger.Warn("neighbor event channel closed")

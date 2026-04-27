@@ -30,7 +30,7 @@ func main() {
 		metricsPath   = flag.String("web.metrics-path", "/metrics", "Path under which to expose metrics.")
 		deviceInclude = flag.String("neighbor.device-include", "", "Regex of devices to include (empty = all).")
 		deviceExclude = flag.String("neighbor.device-exclude", "", "Regex of devices to exclude (empty = none).")
-		staleTTL      = flag.Duration("neighbor.stale-ttl", 15*time.Minute, "TTL for stale neighbor entries before GC.")
+		syncInterval  = flag.Duration("neighbor.sync-interval", 15*time.Minute, "Interval for kernel neighbor table resync and stale entry purge.")
 		deleteGrace   = flag.Duration("neighbor.delete-grace", 30*time.Second, "Grace period to retain MAC after entry deletion.")
 		flapBurst     = flag.Int("neighbor.flap-burst", 5, "Max flap events per key before rate limiting.")
 		logLevel      = flag.String("log.level", "info", "Log level (debug, info, warn, error).")
@@ -55,7 +55,7 @@ func main() {
 	}
 
 	config := StoreConfig{
-		StaleTTL:      *staleTTL,
+		SyncInterval:  *syncInterval,
 		DeleteGrace:   *deleteGrace,
 		FlapRate:      rate.Limit(1),
 		FlapBurst:     *flapBurst,
@@ -85,8 +85,6 @@ func main() {
 			cancel()
 		}
 	}()
-
-	go store.RunGC(ctx)
 
 	mux := http.NewServeMux()
 	mux.Handle("GET "+*metricsPath, promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))

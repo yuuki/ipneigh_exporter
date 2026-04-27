@@ -7,6 +7,8 @@ import (
 
 type mockSource struct {
 	events []NeighborEvent
+	list   []NeighborEvent
+	err    error
 }
 
 func (m *mockSource) Subscribe(_ context.Context) (<-chan NeighborEvent, error) {
@@ -18,12 +20,23 @@ func (m *mockSource) Subscribe(_ context.Context) (<-chan NeighborEvent, error) 
 	return ch, nil
 }
 
+func (m *mockSource) List(_ context.Context) ([]NeighborEvent, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	return m.list, nil
+}
+
 type closedSource struct{}
 
 func (s *closedSource) Subscribe(_ context.Context) (<-chan NeighborEvent, error) {
 	ch := make(chan NeighborEvent)
 	close(ch)
 	return ch, nil
+}
+
+func (s *closedSource) List(_ context.Context) ([]NeighborEvent, error) {
+	return nil, nil
 }
 
 type errorSource struct {
@@ -37,12 +50,25 @@ func (s *errorSource) Subscribe(_ context.Context) (<-chan NeighborEvent, error)
 	return nil, s.err
 }
 
+func (s *errorSource) List(_ context.Context) ([]NeighborEvent, error) {
+	return nil, nil
+}
+
 type channelSource struct {
-	ch <-chan NeighborEvent
+	ch      <-chan NeighborEvent
+	list    []NeighborEvent
+	listErr error
 }
 
 func (s *channelSource) Subscribe(_ context.Context) (<-chan NeighborEvent, error) {
 	return s.ch, nil
+}
+
+func (s *channelSource) List(_ context.Context) ([]NeighborEvent, error) {
+	if s.listErr != nil {
+		return nil, s.listErr
+	}
+	return s.list, nil
 }
 
 type mockResolver struct {

@@ -76,7 +76,7 @@ lima_shell bash -c "
 sudo $EXPORTER_PATH \
     --web.listen-address=:$LISTEN_PORT \
     --neighbor.device-include='^veth-host$' \
-    --neighbor.stale-ttl=5m \
+    --neighbor.sync-interval=5m \
     --neighbor.delete-grace=5s \
     --log.level=debug &
 " &
