@@ -66,7 +66,7 @@ All configuration is via CLI flags. Run `ipneigh_exporter --help` for details.
 | `--web.metrics-path` | `/metrics` | Path for metrics endpoint |
 | `--neighbor.device-include` | (all) | Regex to include devices |
 | `--neighbor.device-exclude` | (none) | Regex to exclude devices |
-| `--neighbor.stale-ttl` | `15m` | TTL before stale entries are GC'd |
+| `--neighbor.sync-interval` | `15m` | Interval for kernel neighbour table resync and stale entry purge |
 | `--neighbor.delete-grace` | `30s` | Grace period to retain MAC after deletion |
 | `--neighbor.flap-burst` | `5` | Max flap events per key before rate limiting |
 | `--log.level` | `info` | Log level (debug, info, warn, error) |
@@ -77,9 +77,11 @@ Neighbor-specific flags:
 
 - `--neighbor.device-include`: Only process neighbour events from devices whose resolved interface name matches this regular expression. Empty means all devices are included.
 - `--neighbor.device-exclude`: Ignore neighbour events from devices whose resolved interface name matches this regular expression. Exclude is applied after include.
-- `--neighbor.stale-ttl`: Remove entries from the exporter's in-memory store after this duration since the last event. This does not delete kernel neighbour entries.
+- `--neighbor.sync-interval`: Periodically resync the exporter's in-memory store with the kernel neighbour table. Entries present in the kernel are refreshed; entries not refreshed for longer than this interval are purged from the exporter store. This does not delete kernel neighbour entries.
 - `--neighbor.delete-grace`: Keep the previous MAC address for this duration after a delete event, so a quick re-add with a different MAC can still be detected as a flap.
 - `--neighbor.flap-burst`: Allow this many MAC flap counter increments per neighbour key before the sustained per-key rate limit suppresses additional flap counter updates.
+
+Migration note: `--neighbor.stale-ttl` has been removed. Use `--neighbor.sync-interval` instead.
 
 ## Metrics
 
@@ -109,13 +111,13 @@ Labels: `dev`, `vrf`, `ip`, `family`
 
 Internal event counter.
 
-Labels: `type` — values: `neigh_new`, `neigh_del`, `flap`, `flap_rate_limited`, `gc_purge`
+Labels: `type` — values: `neigh_new`, `neigh_del`, `sync`, `flap`, `flap_rate_limited`, `gc_purge`
 
 ### `linux_neighbor_exporter_errors_total` (counter)
 
 Internal error counter.
 
-Labels: `stage` — values: `netlink_receive`, `netlink_parse`, `link_resolve`
+Labels: `stage` — values: `netlink_receive`, `netlink_parse`, `netlink_list`, `link_resolve`
 
 ## Flap Detection Rules
 
@@ -230,7 +232,7 @@ stored in `NeighborStore`, and exposed as Prometheus metrics at scrape time.
 ```
 
 - **NetlinkSource**: Subscribes to `RTM_NEWNEIGH`/`RTM_DELNEIGH` via rtnetlink. Bootstraps with `ListExisting: true`.
-- **NeighborStore**: Thread-safe state map. Owns Prometheus counters (incremented at event time, not scrape time). Runs GC loop.
+- **NeighborStore**: Thread-safe state map. Owns Prometheus counters and is periodically refreshed from kernel neighbour table resyncs.
 - **NeighborCollector**: Computes gauge metrics (entries, last_flap) at scrape time from store snapshot. Forwards counters.
 
 ## License

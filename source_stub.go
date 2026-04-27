@@ -22,6 +22,10 @@ func (s *NetlinkSource) Subscribe(_ context.Context) (<-chan NeighborEvent, erro
 	return nil, fmt.Errorf("netlink not supported on %s", runtime.GOOS)
 }
 
+func (s *NetlinkSource) List(_ context.Context) ([]NeighborEvent, error) {
+	return nil, fmt.Errorf("netlink not supported on %s", runtime.GOOS)
+}
+
 type NetlinkResolver struct{}
 
 func (r *NetlinkResolver) LinkName(_ int) (string, error) {

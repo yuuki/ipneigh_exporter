@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"log/slog"
 	"net"
 	"net/netip"
@@ -36,7 +35,7 @@ type NeighborEntry struct {
 }
 
 type StoreConfig struct {
-	StaleTTL      time.Duration
+	SyncInterval  time.Duration
 	DeleteGrace   time.Duration
 	FlapRate      rate.Limit
 	FlapBurst     int
@@ -118,12 +117,101 @@ func (s *NeighborStore) HandleEvent(ev NeighborEvent) {
 		if entry, ok := s.entries[key]; ok {
 			entry.Deleted = true
 			entry.DeletedAt = now
+			entry.LastSeen = now
 			entry.State = ev.State
 		}
 		return
 	}
 
-	s.eventsTotal.WithLabelValues("neigh_new").Inc()
+	s.upsertNeighborLocked(key, ev, devName, vrfName, now, true)
+}
+
+func (s *NeighborStore) SyncNeighbors(events []NeighborEvent) bool {
+	now := s.now()
+	return s.syncNeighborsAt(events, now)
+}
+
+func (s *NeighborStore) syncNeighborsAt(events []NeighborEvent, now time.Time) bool {
+	ok := true
+	linkNames := make(map[int]string)
+
+	for _, ev := range events {
+		devName := s.resolveLinkCached(ev.LinkIndex, linkNames)
+		if devName == "" {
+			s.RecordError("link_resolve")
+			ok = false
+			continue
+		}
+		if !s.deviceAllowed(devName) {
+			continue
+		}
+		vrfName := s.resolveLinkCached(ev.MasterIndex, linkNames)
+
+		key := NeighborKey{
+			Dev:    ev.LinkIndex,
+			VRF:    ev.MasterIndex,
+			IP:     ev.IP,
+			Family: ev.Family,
+		}
+
+		s.mu.Lock()
+		s.upsertNeighborLocked(key, ev, devName, vrfName, now, false)
+		s.mu.Unlock()
+	}
+	if ok {
+		s.eventsTotal.WithLabelValues("sync").Inc()
+	}
+	return ok
+}
+
+func isFlap(oldMAC, newMAC net.HardwareAddr) bool {
+	return len(oldMAC) > 0 && len(newMAC) > 0 && !bytes.Equal(oldMAC, newMAC)
+}
+
+func (s *NeighborStore) allowFlap(key NeighborKey) bool {
+	lim, ok := s.flapLimiters[key]
+	if !ok {
+		lim = rate.NewLimiter(s.config.FlapRate, s.config.FlapBurst)
+		s.flapLimiters[key] = lim
+	}
+	return lim.Allow()
+}
+
+func (s *NeighborStore) gc() {
+	s.gcAt(s.now())
+}
+
+func (s *NeighborStore) gcAt(now time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for key, entry := range s.entries {
+		if entry.Deleted && now.Sub(entry.DeletedAt) <= s.config.DeleteGrace {
+			continue
+		}
+		if now.Sub(entry.LastSeen) > s.config.SyncInterval {
+			delete(s.entries, key)
+			delete(s.flapLimiters, key)
+			s.eventsTotal.WithLabelValues("gc_purge").Inc()
+		}
+	}
+}
+
+func (s *NeighborStore) resolveLinkCached(index int, cache map[int]string) string {
+	if index == 0 {
+		return ""
+	}
+	if name, ok := cache[index]; ok {
+		return name
+	}
+	name := s.resolveLink(index)
+	cache[index] = name
+	return name
+}
+
+func (s *NeighborStore) upsertNeighborLocked(key NeighborKey, ev NeighborEvent, devName, vrfName string, now time.Time, countNew bool) {
+	if countNew {
+		s.eventsTotal.WithLabelValues("neigh_new").Inc()
+	}
 
 	entry, exists := s.entries[key]
 	if !exists {
@@ -165,48 +253,6 @@ func (s *NeighborStore) HandleEvent(ev NeighborEvent) {
 				"dev", devName, "ip", ev.IP, "old_mac", oldMAC, "new_mac", newMAC)
 		} else {
 			s.eventsTotal.WithLabelValues("flap_rate_limited").Inc()
-		}
-	}
-}
-
-func isFlap(oldMAC, newMAC net.HardwareAddr) bool {
-	return len(oldMAC) > 0 && len(newMAC) > 0 && !bytes.Equal(oldMAC, newMAC)
-}
-
-func (s *NeighborStore) allowFlap(key NeighborKey) bool {
-	lim, ok := s.flapLimiters[key]
-	if !ok {
-		lim = rate.NewLimiter(s.config.FlapRate, s.config.FlapBurst)
-		s.flapLimiters[key] = lim
-	}
-	return lim.Allow()
-}
-
-func (s *NeighborStore) RunGC(ctx context.Context) {
-	if s.config.StaleTTL <= 0 {
-		return
-	}
-	ticker := time.NewTicker(s.config.StaleTTL)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			s.gc()
-		}
-	}
-}
-
-func (s *NeighborStore) gc() {
-	now := s.now()
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for key, entry := range s.entries {
-		if now.Sub(entry.LastSeen) > s.config.StaleTTL {
-			delete(s.entries, key)
-			delete(s.flapLimiters, key)
-			s.eventsTotal.WithLabelValues("gc_purge").Inc()
 		}
 	}
 }

@@ -76,7 +76,7 @@ lima_shell bash -c "
 sudo $EXPORTER_PATH \
     --web.listen-address=:$LISTEN_PORT \
     --neighbor.device-include='^veth-host$' \
-    --neighbor.stale-ttl=5m \
+    --neighbor.sync-interval=2s \
     --neighbor.delete-grace=5s \
     --log.level=debug &
 " &
@@ -101,7 +101,14 @@ METRICS=$(lima_shell curl -s "http://localhost:$LISTEN_PORT/metrics")
 assert_match "neighbor entry exists" 'linux_neighbor_entries\{.*dev="veth-host".*state="reachable".*\} [0-9]' "$METRICS"
 assert_no_match "no flap on first entry" 'linux_neighbor_mac_change_total' "$METRICS"
 
-# --- Test 4: MAC flap ---
+# --- Test 4: Periodic sync ---
+echo "=== Test: Periodic sync ==="
+sleep 3
+METRICS=$(lima_shell curl -s "http://localhost:$LISTEN_PORT/metrics")
+assert_match "sync event counted" 'linux_neighbor_exporter_events_total\{type="sync"\} [1-9][0-9]*' "$METRICS"
+assert_match "neighbor entry survives sync interval" 'linux_neighbor_entries\{.*dev="veth-host".*state="reachable".*\} [0-9]' "$METRICS"
+
+# --- Test 5: MAC flap ---
 echo "=== Test: MAC flap detection ==="
 lima_shell sudo ip neigh replace 10.200.0.2 lladdr aa:bb:cc:dd:ee:02 dev veth-host nud reachable
 sleep 1
@@ -110,14 +117,14 @@ assert_match "flap counter = 1" 'linux_neighbor_mac_change_total\{.*dev="veth-ho
 assert_match "flap event counted" 'linux_neighbor_exporter_events_total\{type="flap"\} 1' "$METRICS"
 assert_match "last flap timestamp exists" 'linux_neighbor_last_flap_unix_seconds\{.*ip="10.200.0.2".*\}' "$METRICS"
 
-# --- Test 5: Second flap ---
+# --- Test 6: Second flap ---
 echo "=== Test: Second flap ==="
 lima_shell sudo ip neigh replace 10.200.0.2 lladdr aa:bb:cc:dd:ee:03 dev veth-host nud reachable
 sleep 1
 METRICS=$(lima_shell curl -s "http://localhost:$LISTEN_PORT/metrics")
 assert_match "flap counter = 2" 'linux_neighbor_mac_change_total\{.*dev="veth-host".*ip="10.200.0.2".*\} 2' "$METRICS"
 
-# --- Test 6: State change without MAC change (no flap) ---
+# --- Test 7: State change without MAC change (no flap) ---
 echo "=== Test: State change only ==="
 lima_shell sudo ip neigh replace 10.200.0.2 lladdr aa:bb:cc:dd:ee:03 dev veth-host nud stale
 sleep 1
@@ -125,7 +132,7 @@ METRICS=$(lima_shell curl -s "http://localhost:$LISTEN_PORT/metrics")
 assert_match "flap counter still 2" 'linux_neighbor_mac_change_total\{.*dev="veth-host".*ip="10.200.0.2".*\} 2' "$METRICS"
 assert_match "state updated to stale" 'linux_neighbor_entries\{.*dev="veth-host".*state="stale".*\}' "$METRICS"
 
-# --- Test 7: Delete and re-add with same MAC (no flap within grace) ---
+# --- Test 8: Delete and re-add with same MAC (no flap within grace) ---
 echo "=== Test: Delete + re-add same MAC ==="
 lima_shell sudo ip neigh del 10.200.0.2 dev veth-host
 sleep 1
@@ -134,7 +141,7 @@ sleep 1
 METRICS=$(lima_shell curl -s "http://localhost:$LISTEN_PORT/metrics")
 assert_match "flap counter still 2 after same MAC re-add" 'linux_neighbor_mac_change_total\{.*dev="veth-host".*ip="10.200.0.2".*\} 2' "$METRICS"
 
-# --- Test 8: Delete and re-add with different MAC (flap within grace) ---
+# --- Test 9: Delete and re-add with different MAC (flap within grace) ---
 echo "=== Test: Delete + re-add different MAC ==="
 lima_shell sudo ip neigh del 10.200.0.2 dev veth-host
 sleep 1
@@ -143,7 +150,7 @@ sleep 1
 METRICS=$(lima_shell curl -s "http://localhost:$LISTEN_PORT/metrics")
 assert_match "flap counter = 3 after different MAC re-add" 'linux_neighbor_mac_change_total\{.*dev="veth-host".*ip="10.200.0.2".*\} 3' "$METRICS"
 
-# --- Test 9: Multiple IPs tracked independently ---
+# --- Test 10: Multiple IPs tracked independently ---
 echo "=== Test: Multiple IPs ==="
 lima_shell sudo ip neigh replace 10.200.0.3 lladdr bb:cc:dd:ee:ff:01 dev veth-host nud reachable
 sleep 1
@@ -151,7 +158,7 @@ METRICS=$(lima_shell curl -s "http://localhost:$LISTEN_PORT/metrics")
 assert_no_match "no flap for new IP" 'linux_neighbor_mac_change_total\{.*ip="10.200.0.3"' "$METRICS"
 assert_match "entries count increased" 'linux_neighbor_entries\{.*dev="veth-host".*state="reachable".*\} [0-9]' "$METRICS"
 
-# --- Test 10: readyz returns 200 after events ---
+# --- Test 11: readyz returns 200 after events ---
 echo "=== Test: readyz after events ==="
 READY=$(lima_shell curl -s -o /dev/null -w '%{http_code}' "http://localhost:$LISTEN_PORT/readyz")
 assert_match "readyz returns 200" "^200$" "$READY"

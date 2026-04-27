@@ -22,10 +22,10 @@ func testStore(t *testing.T) *NeighborStore {
 	t.Helper()
 	resolver := &mockResolver{names: map[int]string{1: "eth0", 2: "eth1", 10: "vrf-red"}}
 	return NewNeighborStore(StoreConfig{
-		StaleTTL:    15 * time.Minute,
-		DeleteGrace: 30 * time.Second,
-		FlapRate:    rate.Limit(10),
-		FlapBurst:   5,
+		SyncInterval: 15 * time.Minute,
+		DeleteGrace:  30 * time.Second,
+		FlapRate:     rate.Limit(10),
+		FlapBurst:    5,
 	}, resolver, testLogger())
 }
 
@@ -308,9 +308,9 @@ func TestHandleEvent_VRFAware(t *testing.T) {
 	}
 }
 
-func TestGC(t *testing.T) {
+func TestPurgeStaleEntries(t *testing.T) {
 	s := testStore(t)
-	s.config.StaleTTL = 1 * time.Minute
+	s.config.SyncInterval = 1 * time.Minute
 
 	baseTime := time.Now()
 	s.now = func() time.Time { return baseTime }
@@ -326,6 +326,150 @@ func TestGC(t *testing.T) {
 	snap := s.Snapshot()
 	if len(snap) != 0 {
 		t.Errorf("expected 0 entries after GC, got %d", len(snap))
+	}
+}
+
+func TestSyncNeighborsRefreshesExistingEntry(t *testing.T) {
+	s := testStore(t)
+	s.config.SyncInterval = 1 * time.Minute
+
+	baseTime := time.Now()
+	s.now = func() time.Time { return baseTime }
+	s.HandleEvent(NeighborEvent{
+		Type: RTM_NEWNEIGH, LinkIndex: 1, Family: syscall.AF_INET,
+		IP: ip("10.0.0.1"), HardwareAddr: mac("aa:bb:cc:dd:ee:01"), State: NUD_STALE,
+	})
+
+	s.now = func() time.Time { return baseTime.Add(2 * time.Minute) }
+	s.SyncNeighbors([]NeighborEvent{{
+		Type: RTM_NEWNEIGH, LinkIndex: 1, Family: syscall.AF_INET,
+		IP: ip("10.0.0.1"), HardwareAddr: mac("aa:bb:cc:dd:ee:01"), State: NUD_REACHABLE,
+	}})
+	s.gc()
+
+	key := NeighborKey{Dev: 1, IP: ip("10.0.0.1"), Family: syscall.AF_INET}
+	entry := s.Snapshot()[key]
+	if entry == nil {
+		t.Fatal("expected entry to survive purge after sync")
+	}
+	if entry.State != NUD_REACHABLE {
+		t.Fatalf("expected synced state reachable, got %d", entry.State)
+	}
+	if !entry.LastSeen.Equal(baseTime.Add(2 * time.Minute)) {
+		t.Fatalf("expected LastSeen to be refreshed by sync, got %s", entry.LastSeen)
+	}
+}
+
+func TestSyncNeighborsAddsMissingEntry(t *testing.T) {
+	s := testStore(t)
+
+	s.SyncNeighbors([]NeighborEvent{{
+		Type: RTM_NEWNEIGH, LinkIndex: 1, Family: syscall.AF_INET,
+		IP: ip("10.0.0.2"), HardwareAddr: mac("aa:bb:cc:dd:ee:02"), State: NUD_REACHABLE,
+	}})
+
+	key := NeighborKey{Dev: 1, IP: ip("10.0.0.2"), Family: syscall.AF_INET}
+	if entry := s.Snapshot()[key]; entry == nil {
+		t.Fatal("expected sync to add missing entry")
+	}
+	if got := counterValue(s.eventsTotal, "sync"); got != 1 {
+		t.Fatalf("expected sync event counter=1, got %f", got)
+	}
+}
+
+func TestSyncNeighborsCachesResolvedLinkNames(t *testing.T) {
+	resolver := &countingResolver{names: map[int]string{1: "eth0", 10: "vrf-red"}}
+	s := NewNeighborStore(StoreConfig{
+		SyncInterval: 15 * time.Minute,
+		DeleteGrace:  30 * time.Second,
+		FlapRate:     rate.Limit(10),
+		FlapBurst:    5,
+	}, resolver, testLogger())
+
+	s.SyncNeighbors([]NeighborEvent{
+		{Type: RTM_NEWNEIGH, LinkIndex: 1, MasterIndex: 10, Family: syscall.AF_INET, IP: ip("10.0.0.1"), HardwareAddr: mac("aa:bb:cc:dd:ee:01"), State: NUD_REACHABLE},
+		{Type: RTM_NEWNEIGH, LinkIndex: 1, MasterIndex: 10, Family: syscall.AF_INET, IP: ip("10.0.0.2"), HardwareAddr: mac("aa:bb:cc:dd:ee:02"), State: NUD_REACHABLE},
+		{Type: RTM_NEWNEIGH, LinkIndex: 1, MasterIndex: 10, Family: syscall.AF_INET, IP: ip("10.0.0.3"), HardwareAddr: mac("aa:bb:cc:dd:ee:03"), State: NUD_REACHABLE},
+	})
+
+	if got := resolver.calls[1]; got != 1 {
+		t.Fatalf("expected one LinkName lookup for device index 1, got %d", got)
+	}
+	if got := resolver.calls[10]; got != 1 {
+		t.Fatalf("expected one LinkName lookup for VRF index 10, got %d", got)
+	}
+}
+
+func TestSyncThenPurgeUsesConsistentTime(t *testing.T) {
+	s := testStore(t)
+	s.config.SyncInterval = 1 * time.Second
+
+	baseTime := time.Now()
+	s.now = func() time.Time { return baseTime }
+	s.HandleEvent(NeighborEvent{
+		Type: RTM_NEWNEIGH, LinkIndex: 1, Family: syscall.AF_INET,
+		IP: ip("10.0.0.1"), HardwareAddr: mac("aa:bb:cc:dd:ee:01"), State: NUD_STALE,
+	})
+
+	syncTime := baseTime.Add(2 * time.Minute)
+	s.syncNeighborsAt([]NeighborEvent{{
+		Type: RTM_NEWNEIGH, LinkIndex: 1, Family: syscall.AF_INET,
+		IP: ip("10.0.0.1"), HardwareAddr: mac("aa:bb:cc:dd:ee:01"), State: NUD_REACHABLE,
+	}}, syncTime)
+	s.gcAt(syncTime)
+
+	key := NeighborKey{Dev: 1, IP: ip("10.0.0.1"), Family: syscall.AF_INET}
+	if entry := s.Snapshot()[key]; entry == nil {
+		t.Fatal("entry refreshed by sync should not be purged by immediately following gc")
+	}
+}
+
+func TestSyncNeighborsDetectsMACFlap(t *testing.T) {
+	s := testStore(t)
+	s.HandleEvent(NeighborEvent{
+		Type: RTM_NEWNEIGH, LinkIndex: 1, Family: syscall.AF_INET,
+		IP: ip("10.0.0.1"), HardwareAddr: mac("aa:bb:cc:dd:ee:01"), State: NUD_REACHABLE,
+	})
+
+	s.SyncNeighbors([]NeighborEvent{{
+		Type: RTM_NEWNEIGH, LinkIndex: 1, Family: syscall.AF_INET,
+		IP: ip("10.0.0.1"), HardwareAddr: mac("aa:bb:cc:dd:ee:02"), State: NUD_REACHABLE,
+	}})
+
+	if got := counterValue(s.flapCounter, "eth0", "", "10.0.0.1", "ipv4"); got != 1 {
+		t.Fatalf("expected sync-detected flap counter=1, got %f", got)
+	}
+}
+
+func TestDeleteGracePreventsPurgeAfterDelete(t *testing.T) {
+	s := testStore(t)
+	s.config.SyncInterval = 1 * time.Second
+	s.config.DeleteGrace = 30 * time.Second
+
+	baseTime := time.Now()
+	s.now = func() time.Time { return baseTime }
+	s.HandleEvent(NeighborEvent{
+		Type: RTM_NEWNEIGH, LinkIndex: 1, Family: syscall.AF_INET,
+		IP: ip("10.0.0.1"), HardwareAddr: mac("aa:bb:cc:dd:ee:01"), State: NUD_REACHABLE,
+	})
+
+	deleteTime := baseTime.Add(2 * time.Minute)
+	s.now = func() time.Time { return deleteTime }
+	s.HandleEvent(NeighborEvent{
+		Type: RTM_DELNEIGH, LinkIndex: 1, Family: syscall.AF_INET,
+		IP: ip("10.0.0.1"), State: NUD_FAILED,
+	})
+
+	s.now = func() time.Time { return deleteTime.Add(10 * time.Second) }
+	s.gc()
+
+	key := NeighborKey{Dev: 1, IP: ip("10.0.0.1"), Family: syscall.AF_INET}
+	entry := s.Snapshot()[key]
+	if entry == nil {
+		t.Fatal("delete grace entry should not be purged")
+	}
+	if !entry.LastSeen.Equal(deleteTime) {
+		t.Fatalf("delete should refresh LastSeen, got %s", entry.LastSeen)
 	}
 }
 
@@ -391,10 +535,10 @@ func TestRecordError(t *testing.T) {
 func TestResolveLinkUsesCurrentLinkName(t *testing.T) {
 	resolver := &mockResolver{names: map[int]string{1: "veth-old"}}
 	s := NewNeighborStore(StoreConfig{
-		StaleTTL:    15 * time.Minute,
-		DeleteGrace: 30 * time.Second,
-		FlapRate:    rate.Limit(10),
-		FlapBurst:   5,
+		SyncInterval: 15 * time.Minute,
+		DeleteGrace:  30 * time.Second,
+		FlapRate:     rate.Limit(10),
+		FlapBurst:    5,
 	}, resolver, testLogger())
 
 	if got := s.resolveLink(1); got != "veth-old" {

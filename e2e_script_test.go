@@ -34,3 +34,20 @@ func TestE2ERunCopiesExporterIntoGuest(t *testing.T) {
 		t.Fatal("e2e/run.sh must copy the built exporter into the guest before starting it")
 	}
 }
+
+func TestE2ERunValidatesSyncInterval(t *testing.T) {
+	body, err := os.ReadFile("e2e/run.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	flagPattern := regexp.MustCompile(`--neighbor\.sync-interval=2s`)
+	if !flagPattern.Match(body) {
+		t.Fatal("e2e/run.sh must run the exporter with a short sync interval")
+	}
+
+	counterPattern := regexp.MustCompile(`linux_neighbor_exporter_events_total\\\{type="sync"\\\}`)
+	if !counterPattern.Match(body) {
+		t.Fatal("e2e/run.sh must assert that periodic sync is counted")
+	}
+}

@@ -18,4 +18,5 @@ type NeighborEvent struct {
 
 type NeighborSource interface {
 	Subscribe(ctx context.Context) (<-chan NeighborEvent, error)
+	List(ctx context.Context) ([]NeighborEvent, error)
 }
