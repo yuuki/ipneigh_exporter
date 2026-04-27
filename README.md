@@ -69,6 +69,14 @@ All configuration is via CLI flags. Run `ipneigh_exporter --help` for details.
 | `--log.level` | `info` | Log level (debug, info, warn, error) |
 | `--log.format` | `logfmt` | Log format (logfmt, json) |
 
+Neighbor-specific flags:
+
+- `--neighbor.device-include`: Only process neighbour events from devices whose resolved interface name matches this regular expression. Empty means all devices are included.
+- `--neighbor.device-exclude`: Ignore neighbour events from devices whose resolved interface name matches this regular expression. Exclude is applied after include.
+- `--neighbor.stale-ttl`: Remove entries from the exporter's in-memory store after this duration since the last event. This does not delete kernel neighbour entries.
+- `--neighbor.delete-grace`: Keep the previous MAC address for this duration after a delete event, so a quick re-add with a different MAC can still be detected as a flap.
+- `--neighbor.flap-burst`: Allow this many MAC flap counter increments per neighbour key before the sustained per-key rate limit suppresses additional flap counter updates.
+
 ## Metrics
 
 ### `linux_neighbor_mac_change_total` (counter)
