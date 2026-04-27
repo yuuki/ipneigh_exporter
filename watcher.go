@@ -53,8 +53,9 @@ func (w *Watcher) Run(ctx context.Context) error {
 				w.logger.Error("neighbor sync failed", "error", err)
 				continue
 			}
-			w.store.SyncNeighbors(events)
-			w.store.gc()
+			if w.store.SyncNeighbors(events) {
+				w.store.gc()
+			}
 			w.ready.Store(true)
 		case ev, ok := <-ch:
 			if !ok {

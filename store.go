@@ -117,6 +117,7 @@ func (s *NeighborStore) HandleEvent(ev NeighborEvent) {
 		if entry, ok := s.entries[key]; ok {
 			entry.Deleted = true
 			entry.DeletedAt = now
+			entry.LastSeen = now
 			entry.State = ev.State
 		}
 		return
@@ -125,14 +126,15 @@ func (s *NeighborStore) HandleEvent(ev NeighborEvent) {
 	s.upsertNeighborLocked(key, ev, devName, vrfName, now, true)
 }
 
-func (s *NeighborStore) SyncNeighbors(events []NeighborEvent) {
+func (s *NeighborStore) SyncNeighbors(events []NeighborEvent) bool {
 	now := s.now()
-	s.eventsTotal.WithLabelValues("sync").Inc()
+	ok := true
 
 	for _, ev := range events {
 		devName := s.resolveLink(ev.LinkIndex)
 		if devName == "" {
 			s.RecordError("link_resolve")
+			ok = false
 			continue
 		}
 		if !s.deviceAllowed(devName) {
@@ -151,6 +153,10 @@ func (s *NeighborStore) SyncNeighbors(events []NeighborEvent) {
 		s.upsertNeighborLocked(key, ev, devName, vrfName, now, false)
 		s.mu.Unlock()
 	}
+	if ok {
+		s.eventsTotal.WithLabelValues("sync").Inc()
+	}
+	return ok
 }
 
 func isFlap(oldMAC, newMAC net.HardwareAddr) bool {
@@ -171,6 +177,9 @@ func (s *NeighborStore) gc() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for key, entry := range s.entries {
+		if entry.Deleted && now.Sub(entry.DeletedAt) <= s.config.DeleteGrace {
+			continue
+		}
 		if now.Sub(entry.LastSeen) > s.config.SyncInterval {
 			delete(s.entries, key)
 			delete(s.flapLimiters, key)

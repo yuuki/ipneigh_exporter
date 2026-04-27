@@ -81,6 +81,8 @@ Neighbor-specific flags:
 - `--neighbor.delete-grace`: Keep the previous MAC address for this duration after a delete event, so a quick re-add with a different MAC can still be detected as a flap.
 - `--neighbor.flap-burst`: Allow this many MAC flap counter increments per neighbour key before the sustained per-key rate limit suppresses additional flap counter updates.
 
+Migration note: `--neighbor.stale-ttl` has been removed. Use `--neighbor.sync-interval` instead.
+
 ## Metrics
 
 ### `linux_neighbor_mac_change_total` (counter)

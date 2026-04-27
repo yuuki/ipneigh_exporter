@@ -394,6 +394,38 @@ func TestSyncNeighborsDetectsMACFlap(t *testing.T) {
 	}
 }
 
+func TestDeleteGracePreventsPurgeAfterDelete(t *testing.T) {
+	s := testStore(t)
+	s.config.SyncInterval = 1 * time.Second
+	s.config.DeleteGrace = 30 * time.Second
+
+	baseTime := time.Now()
+	s.now = func() time.Time { return baseTime }
+	s.HandleEvent(NeighborEvent{
+		Type: RTM_NEWNEIGH, LinkIndex: 1, Family: syscall.AF_INET,
+		IP: ip("10.0.0.1"), HardwareAddr: mac("aa:bb:cc:dd:ee:01"), State: NUD_REACHABLE,
+	})
+
+	deleteTime := baseTime.Add(2 * time.Minute)
+	s.now = func() time.Time { return deleteTime }
+	s.HandleEvent(NeighborEvent{
+		Type: RTM_DELNEIGH, LinkIndex: 1, Family: syscall.AF_INET,
+		IP: ip("10.0.0.1"), State: NUD_FAILED,
+	})
+
+	s.now = func() time.Time { return deleteTime.Add(10 * time.Second) }
+	s.gc()
+
+	key := NeighborKey{Dev: 1, IP: ip("10.0.0.1"), Family: syscall.AF_INET}
+	entry := s.Snapshot()[key]
+	if entry == nil {
+		t.Fatal("delete grace entry should not be purged")
+	}
+	if !entry.LastSeen.Equal(deleteTime) {
+		t.Fatalf("delete should refresh LastSeen, got %s", entry.LastSeen)
+	}
+}
+
 func TestDeviceFilter(t *testing.T) {
 	t.Run("exclude", func(t *testing.T) {
 		s := testStore(t)

@@ -217,3 +217,53 @@ func TestWatcher_SyncErrorDoesNotPurge(t *testing.T) {
 		t.Fatalf("expected context cancellation, got %v", err)
 	}
 }
+
+func TestWatcher_PartialSyncFailureDoesNotPurge(t *testing.T) {
+	store := testStore(t)
+	store.config.SyncInterval = 20 * time.Millisecond
+
+	baseTime := time.Now()
+	store.now = func() time.Time { return baseTime }
+	store.HandleEvent(NeighborEvent{
+		Type: RTM_NEWNEIGH, LinkIndex: 1, Family: syscall.AF_INET,
+		IP: ip("10.0.0.1"), HardwareAddr: mac("aa:bb:cc:dd:ee:01"),
+		State: NUD_STALE,
+	})
+
+	store.now = func() time.Time { return baseTime.Add(2 * time.Minute) }
+	ch := make(chan NeighborEvent)
+	source := &channelSource{
+		ch: ch,
+		list: []NeighborEvent{{
+			Type: RTM_NEWNEIGH, LinkIndex: 99, Family: syscall.AF_INET,
+			IP: ip("10.0.0.99"), HardwareAddr: mac("aa:bb:cc:dd:ee:99"),
+			State: NUD_REACHABLE,
+		}},
+	}
+	w := NewWatcher(source, store, testLogger())
+
+	ctx, cancel := context.WithCancel(t.Context())
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- w.Run(ctx)
+	}()
+
+	deadline := time.After(500 * time.Millisecond)
+	for counterValue(store.errorsTotal, "link_resolve") == 0 {
+		select {
+		case <-deadline:
+			t.Fatal("expected link_resolve error to be recorded")
+		default:
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+
+	if len(store.Snapshot()) != 1 {
+		t.Fatal("partial sync failure should not purge stale entries")
+	}
+
+	cancel()
+	if err := <-errCh; !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context cancellation, got %v", err)
+	}
+}
