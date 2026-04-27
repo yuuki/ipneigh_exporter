@@ -377,6 +377,53 @@ func TestSyncNeighborsAddsMissingEntry(t *testing.T) {
 	}
 }
 
+func TestSyncNeighborsCachesResolvedLinkNames(t *testing.T) {
+	resolver := &countingResolver{names: map[int]string{1: "eth0", 10: "vrf-red"}}
+	s := NewNeighborStore(StoreConfig{
+		SyncInterval: 15 * time.Minute,
+		DeleteGrace:  30 * time.Second,
+		FlapRate:     rate.Limit(10),
+		FlapBurst:    5,
+	}, resolver, testLogger())
+
+	s.SyncNeighbors([]NeighborEvent{
+		{Type: RTM_NEWNEIGH, LinkIndex: 1, MasterIndex: 10, Family: syscall.AF_INET, IP: ip("10.0.0.1"), HardwareAddr: mac("aa:bb:cc:dd:ee:01"), State: NUD_REACHABLE},
+		{Type: RTM_NEWNEIGH, LinkIndex: 1, MasterIndex: 10, Family: syscall.AF_INET, IP: ip("10.0.0.2"), HardwareAddr: mac("aa:bb:cc:dd:ee:02"), State: NUD_REACHABLE},
+		{Type: RTM_NEWNEIGH, LinkIndex: 1, MasterIndex: 10, Family: syscall.AF_INET, IP: ip("10.0.0.3"), HardwareAddr: mac("aa:bb:cc:dd:ee:03"), State: NUD_REACHABLE},
+	})
+
+	if got := resolver.calls[1]; got != 1 {
+		t.Fatalf("expected one LinkName lookup for device index 1, got %d", got)
+	}
+	if got := resolver.calls[10]; got != 1 {
+		t.Fatalf("expected one LinkName lookup for VRF index 10, got %d", got)
+	}
+}
+
+func TestSyncThenPurgeUsesConsistentTime(t *testing.T) {
+	s := testStore(t)
+	s.config.SyncInterval = 1 * time.Second
+
+	baseTime := time.Now()
+	s.now = func() time.Time { return baseTime }
+	s.HandleEvent(NeighborEvent{
+		Type: RTM_NEWNEIGH, LinkIndex: 1, Family: syscall.AF_INET,
+		IP: ip("10.0.0.1"), HardwareAddr: mac("aa:bb:cc:dd:ee:01"), State: NUD_STALE,
+	})
+
+	syncTime := baseTime.Add(2 * time.Minute)
+	s.syncNeighborsAt([]NeighborEvent{{
+		Type: RTM_NEWNEIGH, LinkIndex: 1, Family: syscall.AF_INET,
+		IP: ip("10.0.0.1"), HardwareAddr: mac("aa:bb:cc:dd:ee:01"), State: NUD_REACHABLE,
+	}}, syncTime)
+	s.gcAt(syncTime)
+
+	key := NeighborKey{Dev: 1, IP: ip("10.0.0.1"), Family: syscall.AF_INET}
+	if entry := s.Snapshot()[key]; entry == nil {
+		t.Fatal("entry refreshed by sync should not be purged by immediately following gc")
+	}
+}
+
 func TestSyncNeighborsDetectsMACFlap(t *testing.T) {
 	s := testStore(t)
 	s.HandleEvent(NeighborEvent{

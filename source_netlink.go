@@ -123,7 +123,7 @@ func convertNeigh(n netlink.Neigh) (NeighborEvent, error) {
 		return NeighborEvent{}, errSkipNeighborEvent
 	}
 	if n.IP == nil {
-		return NeighborEvent{}, fmt.Errorf("nil IP in neighbor update")
+		return NeighborEvent{}, fmt.Errorf("nil IP in neighbor entry")
 	}
 	addr, ok := netip.AddrFromSlice(n.IP)
 	if !ok {

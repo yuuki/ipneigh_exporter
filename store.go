@@ -128,10 +128,15 @@ func (s *NeighborStore) HandleEvent(ev NeighborEvent) {
 
 func (s *NeighborStore) SyncNeighbors(events []NeighborEvent) bool {
 	now := s.now()
+	return s.syncNeighborsAt(events, now)
+}
+
+func (s *NeighborStore) syncNeighborsAt(events []NeighborEvent, now time.Time) bool {
 	ok := true
+	linkNames := make(map[int]string)
 
 	for _, ev := range events {
-		devName := s.resolveLink(ev.LinkIndex)
+		devName := s.resolveLinkCached(ev.LinkIndex, linkNames)
 		if devName == "" {
 			s.RecordError("link_resolve")
 			ok = false
@@ -140,7 +145,7 @@ func (s *NeighborStore) SyncNeighbors(events []NeighborEvent) bool {
 		if !s.deviceAllowed(devName) {
 			continue
 		}
-		vrfName := s.resolveLink(ev.MasterIndex)
+		vrfName := s.resolveLinkCached(ev.MasterIndex, linkNames)
 
 		key := NeighborKey{
 			Dev:    ev.LinkIndex,
@@ -173,7 +178,10 @@ func (s *NeighborStore) allowFlap(key NeighborKey) bool {
 }
 
 func (s *NeighborStore) gc() {
-	now := s.now()
+	s.gcAt(s.now())
+}
+
+func (s *NeighborStore) gcAt(now time.Time) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for key, entry := range s.entries {
@@ -186,6 +194,18 @@ func (s *NeighborStore) gc() {
 			s.eventsTotal.WithLabelValues("gc_purge").Inc()
 		}
 	}
+}
+
+func (s *NeighborStore) resolveLinkCached(index int, cache map[int]string) string {
+	if index == 0 {
+		return ""
+	}
+	if name, ok := cache[index]; ok {
+		return name
+	}
+	name := s.resolveLink(index)
+	cache[index] = name
+	return name
 }
 
 func (s *NeighborStore) upsertNeighborLocked(key NeighborKey, ev NeighborEvent, devName, vrfName string, now time.Time, countNew bool) {

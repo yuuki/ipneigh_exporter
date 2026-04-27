@@ -81,3 +81,51 @@ func (r *mockResolver) LinkName(index int) (string, error) {
 	}
 	return "", nil
 }
+
+type countingResolver struct {
+	names map[int]string
+	calls map[int]int
+}
+
+func (r *countingResolver) LinkName(index int) (string, error) {
+	if r.calls == nil {
+		r.calls = make(map[int]int)
+	}
+	r.calls[index]++
+	if name, ok := r.names[index]; ok {
+		return name, nil
+	}
+	return "", nil
+}
+
+type blockingListSource struct {
+	ch          chan NeighborEvent
+	listStarted chan struct{}
+	unblockList chan struct{}
+}
+
+func newBlockingListSource() *blockingListSource {
+	return &blockingListSource{
+		ch:          make(chan NeighborEvent, 1),
+		listStarted: make(chan struct{}),
+		unblockList: make(chan struct{}),
+	}
+}
+
+func (s *blockingListSource) Subscribe(_ context.Context) (<-chan NeighborEvent, error) {
+	return s.ch, nil
+}
+
+func (s *blockingListSource) List(ctx context.Context) ([]NeighborEvent, error) {
+	select {
+	case <-s.listStarted:
+	default:
+		close(s.listStarted)
+	}
+	select {
+	case <-s.unblockList:
+		return nil, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
