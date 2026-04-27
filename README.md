@@ -221,14 +221,6 @@ stored in `NeighborStore`, and exposed as Prometheus metrics at scrape time.
 - **NeighborStore**: Thread-safe state map. Owns Prometheus counters (incremented at event time, not scrape time). Runs GC loop.
 - **NeighborCollector**: Computes gauge metrics (entries, last_flap) at scrape time from store snapshot. Forwards counters.
 
-## Future Extensions
-
-- IPv6 neighbour monitoring (data model supports it; needs filter configuration)
-- Multiple network namespace support
-- `ip monitor neigh` fallback backend (NeighborSource interface allows swapping)
-- `/debug/neighbors` JSON endpoint for operational debugging
-- deb/rpm packaging
-
 ## License
 
 MIT License. See [LICENSE](LICENSE) for details.
