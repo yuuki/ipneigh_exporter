@@ -32,12 +32,12 @@ func TestCollector_Entries(t *testing.T) {
 	reg.MustRegister(collector)
 
 	expected := `
-# HELP linux_neighbor_entries Number of neighbor entries by state.
-# TYPE linux_neighbor_entries gauge
-linux_neighbor_entries{dev="eth0",family="ipv4",state="reachable",vrf=""} 2
-linux_neighbor_entries{dev="eth0",family="ipv4",state="stale",vrf=""} 1
+# HELP ipneigh_entries Number of neighbor entries by state.
+# TYPE ipneigh_entries gauge
+ipneigh_entries{dev="eth0",family="ipv4",state="reachable",vrf=""} 2
+ipneigh_entries{dev="eth0",family="ipv4",state="stale",vrf=""} 1
 `
-	if err := testutil.CollectAndCompare(collector, strings.NewReader(expected), "linux_neighbor_entries"); err != nil {
+	if err := testutil.CollectAndCompare(collector, strings.NewReader(expected), "ipneigh_entries"); err != nil {
 		t.Error(err)
 	}
 }
@@ -57,11 +57,11 @@ func TestCollector_FlapCounter(t *testing.T) {
 	collector := NewNeighborCollector(store)
 
 	expected := `
-# HELP linux_neighbor_mac_change_total Number of MAC address changes detected for the same IP.
-# TYPE linux_neighbor_mac_change_total counter
-linux_neighbor_mac_change_total{dev="eth0",family="ipv4",ip="10.0.0.1",vrf=""} 1
+# HELP ipneigh_mac_change_total Number of MAC address changes detected for the same IP.
+# TYPE ipneigh_mac_change_total counter
+ipneigh_mac_change_total{dev="eth0",family="ipv4",ip="10.0.0.1",vrf=""} 1
 `
-	if err := testutil.CollectAndCompare(collector, strings.NewReader(expected), "linux_neighbor_mac_change_total"); err != nil {
+	if err := testutil.CollectAndCompare(collector, strings.NewReader(expected), "ipneigh_mac_change_total"); err != nil {
 		t.Error(err)
 	}
 }
@@ -83,7 +83,7 @@ func TestCollector_LastFlap(t *testing.T) {
 
 	collector := NewNeighborCollector(store)
 
-	count := testutil.CollectAndCount(collector, "linux_neighbor_last_flap_unix_seconds")
+	count := testutil.CollectAndCount(collector, "ipneigh_last_flap_unix_seconds")
 	if count != 1 {
 		t.Errorf("expected 1 last_flap metric, got %d", count)
 	}

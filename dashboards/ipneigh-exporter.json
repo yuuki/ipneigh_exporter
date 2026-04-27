@@ -98,7 +98,7 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "min(up{job=~\"${job:regex}\",instance=~\"${instance:regex}\"} * on (job, instance) group_left() count by (job, instance) ({__name__=~\"linux_neighbor_.*\",job=~\"${job:regex}\",instance=~\"${instance:regex}\"}))",
+          "expr": "min(up{job=~\"${job:regex}\",instance=~\"${instance:regex}\"} * on (job, instance) group_left() count by (job, instance) ({__name__=~\"ipneigh_.*\",job=~\"${job:regex}\",instance=~\"${instance:regex}\"}))",
           "legendFormat": "up",
           "range": true,
           "refId": "A"
@@ -157,7 +157,7 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "sum(linux_neighbor_entries{job=~\"${job:regex}\",instance=~\"${instance:regex}\",dev=~\"${dev:regex}\",vrf=~\"${vrf:regex}\",family=~\"${family:regex}\"})",
+          "expr": "sum(ipneigh_entries{job=~\"${job:regex}\",instance=~\"${instance:regex}\",dev=~\"${dev:regex}\",vrf=~\"${vrf:regex}\",family=~\"${family:regex}\"})",
           "legendFormat": "entries",
           "range": true,
           "refId": "A"
@@ -224,7 +224,7 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "sum(increase(linux_neighbor_mac_change_total{job=~\"${job:regex}\",instance=~\"${instance:regex}\",dev=~\"${dev:regex}\",vrf=~\"${vrf:regex}\",family=~\"${family:regex}\"}[$__rate_interval]))",
+          "expr": "sum(increase(ipneigh_mac_change_total{job=~\"${job:regex}\",instance=~\"${instance:regex}\",dev=~\"${dev:regex}\",vrf=~\"${vrf:regex}\",family=~\"${family:regex}\"}[$__rate_interval]))",
           "legendFormat": "flaps",
           "range": true,
           "refId": "A"
@@ -287,7 +287,7 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "sum(increase(linux_neighbor_exporter_errors_total{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}[$__rate_interval]))",
+          "expr": "sum(increase(ipneigh_errors_total{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}[$__rate_interval]))",
           "legendFormat": "errors",
           "range": true,
           "refId": "A"
@@ -361,7 +361,7 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "sum by (dev, vrf, family) (increase(linux_neighbor_mac_change_total{job=~\"${job:regex}\",instance=~\"${instance:regex}\",dev=~\"${dev:regex}\",vrf=~\"${vrf:regex}\",family=~\"${family:regex}\"}[$__rate_interval]))",
+          "expr": "sum by (dev, vrf, family) (increase(ipneigh_mac_change_total{job=~\"${job:regex}\",instance=~\"${instance:regex}\",dev=~\"${dev:regex}\",vrf=~\"${vrf:regex}\",family=~\"${family:regex}\"}[$__rate_interval]))",
           "legendFormat": "{{dev}} {{vrf}} {{family}}",
           "range": true,
           "refId": "A"
@@ -435,7 +435,7 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "sum by (state) (linux_neighbor_entries{job=~\"${job:regex}\",instance=~\"${instance:regex}\",dev=~\"${dev:regex}\",vrf=~\"${vrf:regex}\",family=~\"${family:regex}\"})",
+          "expr": "sum by (state) (ipneigh_entries{job=~\"${job:regex}\",instance=~\"${instance:regex}\",dev=~\"${dev:regex}\",vrf=~\"${vrf:regex}\",family=~\"${family:regex}\"})",
           "legendFormat": "{{state}}",
           "range": true,
           "refId": "A"
@@ -499,7 +499,7 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "sum by (state) (linux_neighbor_entries{job=~\"${job:regex}\",instance=~\"${instance:regex}\",dev=~\"${dev:regex}\",vrf=~\"${vrf:regex}\",family=~\"${family:regex}\"})",
+          "expr": "sum by (state) (ipneigh_entries{job=~\"${job:regex}\",instance=~\"${instance:regex}\",dev=~\"${dev:regex}\",vrf=~\"${vrf:regex}\",family=~\"${family:regex}\"})",
           "legendFormat": "{{state}}",
           "range": true,
           "refId": "A"
@@ -567,7 +567,7 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "sum by (family) (linux_neighbor_entries{job=~\"${job:regex}\",instance=~\"${instance:regex}\",dev=~\"${dev:regex}\",vrf=~\"${vrf:regex}\",family=~\"${family:regex}\"})",
+          "expr": "sum by (family) (ipneigh_entries{job=~\"${job:regex}\",instance=~\"${instance:regex}\",dev=~\"${dev:regex}\",vrf=~\"${vrf:regex}\",family=~\"${family:regex}\"})",
           "legendFormat": "{{family}}",
           "range": true,
           "refId": "A"
@@ -621,7 +621,7 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "topk(10, sum by (dev, vrf, ip, family) (increase(linux_neighbor_mac_change_total{job=~\"${job:regex}\",instance=~\"${instance:regex}\",dev=~\"${dev:regex}\",vrf=~\"${vrf:regex}\",family=~\"${family:regex}\"}[$__rate_interval])))",
+          "expr": "topk(10, sum by (dev, vrf, ip, family) (increase(ipneigh_mac_change_total{job=~\"${job:regex}\",instance=~\"${instance:regex}\",dev=~\"${dev:regex}\",vrf=~\"${vrf:regex}\",family=~\"${family:regex}\"}[$__rate_interval])))",
           "format": "table",
           "instant": true,
           "legendFormat": "__auto",
@@ -677,7 +677,7 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "topk(50, linux_neighbor_last_flap_unix_seconds{job=~\"${job:regex}\",instance=~\"${instance:regex}\",dev=~\"${dev:regex}\",vrf=~\"${vrf:regex}\",family=~\"${family:regex}\"}) * 1000",
+          "expr": "topk(50, ipneigh_last_flap_unix_seconds{job=~\"${job:regex}\",instance=~\"${instance:regex}\",dev=~\"${dev:regex}\",vrf=~\"${vrf:regex}\",family=~\"${family:regex}\"}) * 1000",
           "format": "table",
           "instant": true,
           "legendFormat": "__auto",
@@ -749,7 +749,7 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "sum by (type) (rate(linux_neighbor_exporter_events_total{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}[$__rate_interval]))",
+          "expr": "sum by (type) (rate(ipneigh_events_total{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}[$__rate_interval]))",
           "legendFormat": "{{type}}",
           "range": true,
           "refId": "A"
@@ -823,7 +823,7 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "sum by (stage) (rate(linux_neighbor_exporter_errors_total{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}[$__rate_interval]))",
+          "expr": "sum by (stage) (rate(ipneigh_errors_total{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}[$__rate_interval]))",
           "legendFormat": "{{stage}}",
           "range": true,
           "refId": "A"
@@ -886,7 +886,7 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "sum(increase(linux_neighbor_exporter_events_total{job=~\"${job:regex}\",instance=~\"${instance:regex}\",type=\"flap_rate_limited\"}[$__rate_interval]))",
+          "expr": "sum(increase(ipneigh_events_total{job=~\"${job:regex}\",instance=~\"${instance:regex}\",type=\"flap_rate_limited\"}[$__rate_interval]))",
           "legendFormat": "rate limited",
           "range": true,
           "refId": "A"
@@ -932,7 +932,7 @@
           "type": "prometheus",
           "uid": "${DS_PROMETHEUS}"
         },
-        "definition": "label_values({__name__=~\"linux_neighbor_.*\"}, job)",
+        "definition": "label_values({__name__=~\"ipneigh_.*\"}, job)",
         "hide": 0,
         "includeAll": true,
         "label": "Job",
@@ -940,7 +940,7 @@
         "name": "job",
         "options": [],
         "query": {
-          "query": "label_values({__name__=~\"linux_neighbor_.*\"}, job)",
+          "query": "label_values({__name__=~\"ipneigh_.*\"}, job)",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
         "refresh": 1,
@@ -958,7 +958,7 @@
           "type": "prometheus",
           "uid": "${DS_PROMETHEUS}"
         },
-        "definition": "label_values({__name__=~\"linux_neighbor_.*\",job=~\"${job:regex}\"}, instance)",
+        "definition": "label_values({__name__=~\"ipneigh_.*\",job=~\"${job:regex}\"}, instance)",
         "hide": 0,
         "includeAll": true,
         "label": "Instance",
@@ -966,7 +966,7 @@
         "name": "instance",
         "options": [],
         "query": {
-          "query": "label_values({__name__=~\"linux_neighbor_.*\",job=~\"${job:regex}\"}, instance)",
+          "query": "label_values({__name__=~\"ipneigh_.*\",job=~\"${job:regex}\"}, instance)",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
         "refresh": 1,
@@ -985,7 +985,7 @@
           "type": "prometheus",
           "uid": "${DS_PROMETHEUS}"
         },
-        "definition": "label_values(linux_neighbor_entries{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}, dev)",
+        "definition": "label_values(ipneigh_entries{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}, dev)",
         "hide": 0,
         "includeAll": true,
         "label": "Device",
@@ -993,7 +993,7 @@
         "name": "dev",
         "options": [],
         "query": {
-          "query": "label_values(linux_neighbor_entries{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}, dev)",
+          "query": "label_values(ipneigh_entries{job=~\"${job:regex}\",instance=~\"${instance:regex}\"}, dev)",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
         "refresh": 1,
@@ -1012,7 +1012,7 @@
           "type": "prometheus",
           "uid": "${DS_PROMETHEUS}"
         },
-        "definition": "label_values(linux_neighbor_entries{job=~\"${job:regex}\",instance=~\"${instance:regex}\",dev=~\"${dev:regex}\"}, vrf)",
+        "definition": "label_values(ipneigh_entries{job=~\"${job:regex}\",instance=~\"${instance:regex}\",dev=~\"${dev:regex}\"}, vrf)",
         "hide": 0,
         "includeAll": true,
         "label": "VRF",
@@ -1020,7 +1020,7 @@
         "name": "vrf",
         "options": [],
         "query": {
-          "query": "label_values(linux_neighbor_entries{job=~\"${job:regex}\",instance=~\"${instance:regex}\",dev=~\"${dev:regex}\"}, vrf)",
+          "query": "label_values(ipneigh_entries{job=~\"${job:regex}\",instance=~\"${instance:regex}\",dev=~\"${dev:regex}\"}, vrf)",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
         "refresh": 1,
@@ -1039,7 +1039,7 @@
           "type": "prometheus",
           "uid": "${DS_PROMETHEUS}"
         },
-        "definition": "label_values(linux_neighbor_entries{job=~\"${job:regex}\",instance=~\"${instance:regex}\",dev=~\"${dev:regex}\",vrf=~\"${vrf:regex}\"}, family)",
+        "definition": "label_values(ipneigh_entries{job=~\"${job:regex}\",instance=~\"${instance:regex}\",dev=~\"${dev:regex}\",vrf=~\"${vrf:regex}\"}, family)",
         "hide": 0,
         "includeAll": true,
         "label": "Family",
@@ -1047,7 +1047,7 @@
         "name": "family",
         "options": [],
         "query": {
-          "query": "label_values(linux_neighbor_entries{job=~\"${job:regex}\",instance=~\"${instance:regex}\",dev=~\"${dev:regex}\",vrf=~\"${vrf:regex}\"}, family)",
+          "query": "label_values(ipneigh_entries{job=~\"${job:regex}\",instance=~\"${instance:regex}\",dev=~\"${dev:regex}\",vrf=~\"${vrf:regex}\"}, family)",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
         "refresh": 1,

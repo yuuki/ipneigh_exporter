@@ -90,47 +90,47 @@ assert_match "healthz returns 200" "^200$" "$HEALTH"
 # --- Test 2: Initial metrics (no flap yet) ---
 echo "=== Test: Initial metrics ==="
 METRICS=$(lima_shell curl -s "http://localhost:$LISTEN_PORT/metrics")
-assert_no_match "no flap counter initially" 'linux_neighbor_mac_change_total' "$METRICS"
-assert_match "exporter events counter exists" 'linux_neighbor_exporter_events_total' "$METRICS"
+assert_no_match "no flap counter initially" 'ipneigh_mac_change_total' "$METRICS"
+assert_match "exporter events counter exists" 'ipneigh_events_total' "$METRICS"
 
 # --- Test 3: Create ARP entry ---
 echo "=== Test: Create ARP entry ==="
 lima_shell sudo ip neigh replace 10.200.0.2 lladdr aa:bb:cc:dd:ee:01 dev veth-host nud reachable
 sleep 1
 METRICS=$(lima_shell curl -s "http://localhost:$LISTEN_PORT/metrics")
-assert_match "neighbor entry exists" 'linux_neighbor_entries\{.*dev="veth-host".*state="reachable".*\} [0-9]' "$METRICS"
-assert_no_match "no flap on first entry" 'linux_neighbor_mac_change_total' "$METRICS"
+assert_match "neighbor entry exists" 'ipneigh_entries\{.*dev="veth-host".*state="reachable".*\} [0-9]' "$METRICS"
+assert_no_match "no flap on first entry" 'ipneigh_mac_change_total' "$METRICS"
 
 # --- Test 4: Periodic sync ---
 echo "=== Test: Periodic sync ==="
 sleep 3
 METRICS=$(lima_shell curl -s "http://localhost:$LISTEN_PORT/metrics")
-assert_match "sync event counted" 'linux_neighbor_exporter_events_total\{type="sync"\} [1-9][0-9]*' "$METRICS"
-assert_match "neighbor entry survives sync interval" 'linux_neighbor_entries\{.*dev="veth-host".*state="reachable".*\} [0-9]' "$METRICS"
+assert_match "sync event counted" 'ipneigh_events_total\{type="sync"\} [1-9][0-9]*' "$METRICS"
+assert_match "neighbor entry survives sync interval" 'ipneigh_entries\{.*dev="veth-host".*state="reachable".*\} [0-9]' "$METRICS"
 
 # --- Test 5: MAC flap ---
 echo "=== Test: MAC flap detection ==="
 lima_shell sudo ip neigh replace 10.200.0.2 lladdr aa:bb:cc:dd:ee:02 dev veth-host nud reachable
 sleep 1
 METRICS=$(lima_shell curl -s "http://localhost:$LISTEN_PORT/metrics")
-assert_match "flap counter = 1" 'linux_neighbor_mac_change_total\{.*dev="veth-host".*ip="10.200.0.2".*\} 1' "$METRICS"
-assert_match "flap event counted" 'linux_neighbor_exporter_events_total\{type="flap"\} 1' "$METRICS"
-assert_match "last flap timestamp exists" 'linux_neighbor_last_flap_unix_seconds\{.*ip="10.200.0.2".*\}' "$METRICS"
+assert_match "flap counter = 1" 'ipneigh_mac_change_total\{.*dev="veth-host".*ip="10.200.0.2".*\} 1' "$METRICS"
+assert_match "flap event counted" 'ipneigh_events_total\{type="flap"\} 1' "$METRICS"
+assert_match "last flap timestamp exists" 'ipneigh_last_flap_unix_seconds\{.*ip="10.200.0.2".*\}' "$METRICS"
 
 # --- Test 6: Second flap ---
 echo "=== Test: Second flap ==="
 lima_shell sudo ip neigh replace 10.200.0.2 lladdr aa:bb:cc:dd:ee:03 dev veth-host nud reachable
 sleep 1
 METRICS=$(lima_shell curl -s "http://localhost:$LISTEN_PORT/metrics")
-assert_match "flap counter = 2" 'linux_neighbor_mac_change_total\{.*dev="veth-host".*ip="10.200.0.2".*\} 2' "$METRICS"
+assert_match "flap counter = 2" 'ipneigh_mac_change_total\{.*dev="veth-host".*ip="10.200.0.2".*\} 2' "$METRICS"
 
 # --- Test 7: State change without MAC change (no flap) ---
 echo "=== Test: State change only ==="
 lima_shell sudo ip neigh replace 10.200.0.2 lladdr aa:bb:cc:dd:ee:03 dev veth-host nud stale
 sleep 1
 METRICS=$(lima_shell curl -s "http://localhost:$LISTEN_PORT/metrics")
-assert_match "flap counter still 2" 'linux_neighbor_mac_change_total\{.*dev="veth-host".*ip="10.200.0.2".*\} 2' "$METRICS"
-assert_match "state updated to stale" 'linux_neighbor_entries\{.*dev="veth-host".*state="stale".*\}' "$METRICS"
+assert_match "flap counter still 2" 'ipneigh_mac_change_total\{.*dev="veth-host".*ip="10.200.0.2".*\} 2' "$METRICS"
+assert_match "state updated to stale" 'ipneigh_entries\{.*dev="veth-host".*state="stale".*\}' "$METRICS"
 
 # --- Test 8: Delete and re-add with same MAC (no flap within grace) ---
 echo "=== Test: Delete + re-add same MAC ==="
@@ -139,7 +139,7 @@ sleep 1
 lima_shell sudo ip neigh replace 10.200.0.2 lladdr aa:bb:cc:dd:ee:03 dev veth-host nud reachable
 sleep 1
 METRICS=$(lima_shell curl -s "http://localhost:$LISTEN_PORT/metrics")
-assert_match "flap counter still 2 after same MAC re-add" 'linux_neighbor_mac_change_total\{.*dev="veth-host".*ip="10.200.0.2".*\} 2' "$METRICS"
+assert_match "flap counter still 2 after same MAC re-add" 'ipneigh_mac_change_total\{.*dev="veth-host".*ip="10.200.0.2".*\} 2' "$METRICS"
 
 # --- Test 9: Delete and re-add with different MAC (flap within grace) ---
 echo "=== Test: Delete + re-add different MAC ==="
@@ -148,15 +148,15 @@ sleep 1
 lima_shell sudo ip neigh replace 10.200.0.2 lladdr aa:bb:cc:dd:ee:04 dev veth-host nud reachable
 sleep 1
 METRICS=$(lima_shell curl -s "http://localhost:$LISTEN_PORT/metrics")
-assert_match "flap counter = 3 after different MAC re-add" 'linux_neighbor_mac_change_total\{.*dev="veth-host".*ip="10.200.0.2".*\} 3' "$METRICS"
+assert_match "flap counter = 3 after different MAC re-add" 'ipneigh_mac_change_total\{.*dev="veth-host".*ip="10.200.0.2".*\} 3' "$METRICS"
 
 # --- Test 10: Multiple IPs tracked independently ---
 echo "=== Test: Multiple IPs ==="
 lima_shell sudo ip neigh replace 10.200.0.3 lladdr bb:cc:dd:ee:ff:01 dev veth-host nud reachable
 sleep 1
 METRICS=$(lima_shell curl -s "http://localhost:$LISTEN_PORT/metrics")
-assert_no_match "no flap for new IP" 'linux_neighbor_mac_change_total\{.*ip="10.200.0.3"' "$METRICS"
-assert_match "entries count increased" 'linux_neighbor_entries\{.*dev="veth-host".*state="reachable".*\} [0-9]' "$METRICS"
+assert_no_match "no flap for new IP" 'ipneigh_mac_change_total\{.*ip="10.200.0.3"' "$METRICS"
+assert_match "entries count increased" 'ipneigh_entries\{.*dev="veth-host".*state="reachable".*\} [0-9]' "$METRICS"
 
 # --- Test 11: readyz returns 200 after events ---
 echo "=== Test: readyz after events ==="

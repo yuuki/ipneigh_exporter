@@ -69,15 +69,15 @@ func NewNeighborStore(config StoreConfig, resolver LinkResolver, logger *slog.Lo
 		entries:      make(map[NeighborKey]*NeighborEntry),
 		flapLimiters: make(map[NeighborKey]*rate.Limiter),
 		flapCounter: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "linux_neighbor_mac_change_total",
+			Name: "ipneigh_mac_change_total",
 			Help: "Number of MAC address changes detected for the same IP.",
 		}, []string{"dev", "vrf", "ip", "family"}),
 		eventsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "linux_neighbor_exporter_events_total",
+			Name: "ipneigh_events_total",
 			Help: "Total number of events processed by the exporter.",
 		}, []string{"type"}),
 		errorsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "linux_neighbor_exporter_errors_total",
+			Name: "ipneigh_errors_total",
 			Help: "Total number of errors encountered by the exporter.",
 		}, []string{"stage"}),
 		linkResolver: resolver,

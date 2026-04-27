@@ -46,7 +46,7 @@ func TestE2ERunValidatesSyncInterval(t *testing.T) {
 		t.Fatal("e2e/run.sh must run the exporter with a short sync interval")
 	}
 
-	counterPattern := regexp.MustCompile(`linux_neighbor_exporter_events_total\\\{type="sync"\\\}`)
+	counterPattern := regexp.MustCompile(`ipneigh_events_total\\\{type="sync"\\\}`)
 	if !counterPattern.Match(body) {
 		t.Fatal("e2e/run.sh must assert that periodic sync is counted")
 	}

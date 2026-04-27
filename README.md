@@ -85,7 +85,7 @@ Migration note: `--neighbor.stale-ttl` has been removed. Use `--neighbor.sync-in
 
 ## Metrics
 
-### `linux_neighbor_mac_change_total` (counter)
+### `ipneigh_mac_change_total` (counter)
 
 Number of MAC address changes detected for the same IP.
 
@@ -93,7 +93,7 @@ Labels: `dev`, `vrf`, `ip`, `family`
 
 Only IPs that have experienced a flap produce a time series.
 
-### `linux_neighbor_entries` (gauge)
+### `ipneigh_entries` (gauge)
 
 Number of currently tracked neighbour entries, aggregated by state.
 
@@ -101,19 +101,19 @@ Labels: `dev`, `vrf`, `family`, `state`
 
 States: `reachable`, `stale`, `delay`, `probe`, `failed`, `incomplete`, `permanent`, `noarp`
 
-### `linux_neighbor_last_flap_unix_seconds` (gauge)
+### `ipneigh_last_flap_unix_seconds` (gauge)
 
 Unix timestamp of the most recent MAC flap for a given neighbour key.
 
 Labels: `dev`, `vrf`, `ip`, `family`
 
-### `linux_neighbor_exporter_events_total` (counter)
+### `ipneigh_events_total` (counter)
 
 Internal event counter.
 
 Labels: `type` — values: `neigh_new`, `neigh_del`, `sync`, `flap`, `flap_rate_limited`, `gc_purge`
 
-### `linux_neighbor_exporter_errors_total` (counter)
+### `ipneigh_errors_total` (counter)
 
 Internal error counter.
 
@@ -136,7 +136,7 @@ The following are NOT flaps:
 
 ### Rate Limiting
 
-Each key has an independent rate limiter (default: burst of 5, sustained 1/second). When exceeded, the flap is counted as a `flap_rate_limited` event but not added to `linux_neighbor_mac_change_total`. This prevents STP loops or other pathological conditions from causing unbounded counter growth.
+Each key has an independent rate limiter (default: burst of 5, sustained 1/second). When exceeded, the flap is counted as a `flap_rate_limited` event but not added to `ipneigh_mac_change_total`. This prevents STP loops or other pathological conditions from causing unbounded counter growth.
 
 ## Endpoints
 
@@ -153,7 +153,7 @@ groups:
   - name: neighbor_flap
     rules:
       - alert: NeighborMacFlap
-        expr: rate(linux_neighbor_mac_change_total[5m]) > 0
+        expr: rate(ipneigh_mac_change_total[5m]) > 0
         for: 1m
         labels:
           severity: warning
@@ -161,7 +161,7 @@ groups:
           summary: "MAC flap on {{ $labels.dev }} for {{ $labels.ip }}"
 
       - alert: NeighborFlapStorm
-        expr: rate(linux_neighbor_mac_change_total[5m]) > 1
+        expr: rate(ipneigh_mac_change_total[5m]) > 1
         for: 5m
         labels:
           severity: critical
@@ -175,7 +175,7 @@ groups:
           severity: critical
 
       - alert: NeighborExporterErrors
-        expr: rate(linux_neighbor_exporter_errors_total[5m]) > 0
+        expr: rate(ipneigh_errors_total[5m]) > 0
         for: 5m
         labels:
           severity: warning

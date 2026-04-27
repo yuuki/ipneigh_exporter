@@ -6,12 +6,12 @@ import (
 
 var (
 	entriesDesc = prometheus.NewDesc(
-		"linux_neighbor_entries",
+		"ipneigh_entries",
 		"Number of neighbor entries by state.",
 		[]string{"dev", "vrf", "family", "state"}, nil,
 	)
 	lastFlapDesc = prometheus.NewDesc(
-		"linux_neighbor_last_flap_unix_seconds",
+		"ipneigh_last_flap_unix_seconds",
 		"Unix timestamp of the most recent MAC flap for this neighbor.",
 		[]string{"dev", "vrf", "ip", "family"}, nil,
 	)

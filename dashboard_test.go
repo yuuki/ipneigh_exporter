@@ -79,11 +79,11 @@ func TestGrafanaDashboardTemplate(t *testing.T) {
 
 	allExprs := strings.Join(exprs, "\n")
 	for _, metric := range []string{
-		"linux_neighbor_mac_change_total",
-		"linux_neighbor_entries",
-		"linux_neighbor_last_flap_unix_seconds",
-		"linux_neighbor_exporter_events_total",
-		"linux_neighbor_exporter_errors_total",
+		"ipneigh_mac_change_total",
+		"ipneigh_entries",
+		"ipneigh_last_flap_unix_seconds",
+		"ipneigh_events_total",
+		"ipneigh_errors_total",
 	} {
 		if !strings.Contains(allExprs, metric) {
 			t.Errorf("dashboard does not reference %s", metric)
@@ -124,7 +124,7 @@ func TestGrafanaDashboardTemplate(t *testing.T) {
 	}
 
 	exporterStatusExpr := panelExpr(t, dashboard, "Exporter Status")
-	if !strings.Contains(exporterStatusExpr, "linux_neighbor_") {
+	if !strings.Contains(exporterStatusExpr, "ipneigh_") {
 		t.Errorf("Exporter Status query should be scoped to ipneigh_exporter metrics, got %q", exporterStatusExpr)
 	}
 

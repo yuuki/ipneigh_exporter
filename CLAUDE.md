@@ -50,11 +50,11 @@ Key design constraints:
 
 | Metric | Type | Owner |
 |--------|------|-------|
-| `linux_neighbor_mac_change_total` | Counter | Store (event-time) |
-| `linux_neighbor_entries` | Gauge | Collector (scrape-time) |
-| `linux_neighbor_last_flap_unix_seconds` | Gauge | Collector (scrape-time) |
-| `linux_neighbor_exporter_events_total` | Counter | Store (event-time) |
-| `linux_neighbor_exporter_errors_total` | Counter | Store (event-time) |
+| `ipneigh_mac_change_total` | Counter | Store (event-time) |
+| `ipneigh_entries` | Gauge | Collector (scrape-time) |
+| `ipneigh_last_flap_unix_seconds` | Gauge | Collector (scrape-time) |
+| `ipneigh_events_total` | Counter | Store (event-time) |
+| `ipneigh_errors_total` | Counter | Store (event-time) |
 
 ## Runtime Requirements
 
