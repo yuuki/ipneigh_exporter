@@ -3,7 +3,7 @@
 [![AI Generated](https://img.shields.io/badge/AI%20Generated-Claude-orange?logo=anthropic)](https://claude.ai/claude-code)
 [![License](https://img.shields.io/github/license/yuuki/ipneigh_exporter)](LICENSE)
 [![GitHub Release](https://img.shields.io/github/v/release/yuuki/ipneigh_exporter)](https://github.com/yuuki/ipneigh_exporter/releases)
-[![Go](https://img.shields.io/badge/Go-1.26.2-blue?logo=go)](https://go.dev)
+[![Go](https://img.shields.io/badge/Go-1.27.1-blue?logo=go)](https://go.dev)
 
 Prometheus exporter that monitors Linux kernel neighbour table (ARP/NDP) and detects MAC address flaps.
 
@@ -24,7 +24,7 @@ Designed for Linux gateways where detecting MAC address changes on the same IP i
 
 - Linux kernel 3.x+ (rtnetlink neighbour subscription)
 - `CAP_NET_ADMIN` capability (for netlink neighbour subscription)
-- Go 1.26.2 (build and test only)
+- Go 1.27.1 (build and test only)
 
 The exporter binary is Linux-only. Non-Linux platforms use stub implementations
 so unit tests can run there, but the built exporter is intended to run on Linux.
