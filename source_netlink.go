@@ -39,37 +39,48 @@ func (s *NetlinkSource) Subscribe(ctx context.Context) (<-chan NeighborEvent, er
 
 	out := make(chan NeighborEvent, 256)
 
-	go func() {
-		defer close(out)
-		defer close(done)
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case u, ok := <-updates:
-				if !ok {
-					return
-				}
-				ev, err := convertNeighUpdate(u)
-				if err != nil {
-					if errors.Is(err, errSkipNeighborEvent) {
-						s.logger.Debug("skipping non-IP neighbor update")
-						continue
-					}
-					s.recordStageError("netlink_parse")
-					s.logger.Debug("skipping neighbor update", "error", err)
-					continue
-				}
-				select {
-				case out <- ev:
-				case <-ctx.Done():
-					return
-				}
-			}
-		}
-	}()
+	go s.forward(ctx, updates, done, out)
 
 	return out, nil
+}
+
+// forward relays subscription updates to out until ctx ends or netlink closes
+// updates. Closing done ends the netlink subscription.
+func (s *NetlinkSource) forward(ctx context.Context, updates <-chan netlink.NeighUpdate, done chan<- struct{}, out chan<- NeighborEvent) {
+	defer close(out)
+	defer close(done)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case u, ok := <-updates:
+			if !ok || !s.deliver(ctx, u, out) {
+				return
+			}
+		}
+	}
+}
+
+// deliver sends the event of one update. An update that does not convert is
+// skipped rather than ending the subscription; deliver reports false only when
+// ctx ends before the event is taken.
+func (s *NetlinkSource) deliver(ctx context.Context, u netlink.NeighUpdate, out chan<- NeighborEvent) bool {
+	ev, err := convertNeighUpdate(u)
+	if errors.Is(err, errSkipNeighborEvent) {
+		s.logger.Debug("skipping non-IP neighbor update")
+		return true
+	}
+	if err != nil {
+		s.recordStageError("netlink_parse")
+		s.logger.Debug("skipping neighbor update", "error", err)
+		return true
+	}
+	select {
+	case out <- ev:
+		return true
+	case <-ctx.Done():
+		return false
+	}
 }
 
 func (s *NetlinkSource) List(ctx context.Context) ([]NeighborEvent, error) {
