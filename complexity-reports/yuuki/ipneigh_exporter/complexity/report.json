@@ -1,0 +1,60 @@
+{
+  "repository": "yuuki/ipneigh_exporter/complexity",
+  "ref": "refs/heads/main",
+  "commit": "05fd0df4afb82014caad374e5afee699100e1f94",
+  "base_ref": "refs/heads/main",
+  "timestamp": "2026-11-05T13:07:44.471711195Z",
+  "custom_metrics": [
+    {
+      "key": "code_complexity",
+      "name": "Code Complexity",
+      "metrics": [
+        {
+          "key": "function_count",
+          "name": "Function count",
+          "value": 48
+        },
+        {
+          "key": "cognitive_sum",
+          "name": "Cognitive: total",
+          "value": 105
+        },
+        {
+          "key": "cognitive_max",
+          "name": "Cognitive: max",
+          "value": 14
+        },
+        {
+          "key": "cognitive_median",
+          "name": "Cognitive: median",
+          "value": 1
+        },
+        {
+          "key": "cognitive_p90",
+          "name": "Cognitive: p90",
+          "value": 6
+        },
+        {
+          "key": "cyclomatic_sum",
+          "name": "Cyclomatic: total",
+          "value": 141
+        },
+        {
+          "key": "cyclomatic_max",
+          "name": "Cyclomatic: max",
+          "value": 9
+        },
+        {
+          "key": "cyclomatic_median",
+          "name": "Cyclomatic: median",
+          "value": 2
+        },
+        {
+          "key": "cyclomatic_p90",
+          "name": "Cyclomatic: p90",
+          "value": 6
+        }
+      ]
+    }
+  ]
+}
