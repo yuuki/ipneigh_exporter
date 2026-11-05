@@ -9,6 +9,7 @@ make build              # Cross-compile for linux/amd64 with version ldflags
 make test               # go test ./... -race -count=1
 make vet                # go vet ./...
 make lint               # golangci-lint run
+make complexity         # cccc complexity ranking (needs cccc; settings in cccc.toml)
 
 # Run a single test
 go test ./... -run TestHandleEvent_DifferentMAC_Flap -v

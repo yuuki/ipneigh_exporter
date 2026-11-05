@@ -3,7 +3,7 @@ REVISION ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 LDFLAGS := -X main.version=$(VERSION) -X main.revision=$(REVISION)
 E2E_VM_NAME := ipneigh-e2e
 
-.PHONY: build test lint vet clean e2e e2e-setup e2e-teardown
+.PHONY: build test lint vet complexity clean e2e e2e-setup e2e-teardown
 
 build:
 	GOOS=linux GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o ipneigh_exporter .
@@ -16,6 +16,11 @@ lint:
 
 vet:
 	go vet ./...
+
+# Rank the most complex functions with cccc (https://github.com/moznion/cccc);
+# what is analyzed is configured in cccc.toml.
+complexity:
+	cccc --table --top-cognitive 20 .
 
 clean:
 	rm -f ipneigh_exporter

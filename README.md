@@ -235,6 +235,17 @@ stored in `NeighborStore`, and exposed as Prometheus metrics at scrape time.
 - **NeighborStore**: Thread-safe state map. Owns Prometheus counters and is periodically refreshed from kernel neighbour table resyncs.
 - **NeighborCollector**: Computes gauge metrics (entries, last_flap) at scrape time from store snapshot. Forwards counters.
 
+## Code Complexity
+
+CI measures Cognitive and Cyclomatic Complexity with
+[cccc](https://github.com/moznion/cccc) on pull requests and pushes to `main`
+and writes the totals and the 20 most complex functions to the job summary
+(`.github/workflows/complexity.yml`). It only reports; no complexity
+threshold fails the build. `cccc.toml` sets what is analyzed: tests, generated
+code and vendored sources are excluded. To see the same ranking locally,
+install cccc (a [release binary](https://github.com/moznion/cccc/releases) or
+`cargo install cccc-cli`) and run `make complexity`.
+
 ## License
 
 MIT License. See [LICENSE](LICENSE) for details.
