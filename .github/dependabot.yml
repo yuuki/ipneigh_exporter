@@ -1,0 +1,36 @@
+# Version updates arrive monthly, grouped into one PR per ecosystem, and only
+# after a release has been public for a week (compromised releases are usually
+# pulled within days). Security updates are not delayed by this schedule.
+#
+# No docker ecosystem: Dockerfile.goreleaser (the shipped image) starts FROM
+# scratch, and the golang image of the local Dockerfile is bumped together with
+# the Go version of go.mod.
+version: 2
+updates:
+  # Also updates the commit SHAs the workflows pin actions to, and their
+  # version comments.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 7
+    groups:
+      github-actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: ci
+      include: scope
+
+  - package-ecosystem: gomod
+    directories: ["/"]
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 7
+    groups:
+      go-modules:
+        patterns: ["*"]
+    commit-message:
+      prefix: build
+      include: scope

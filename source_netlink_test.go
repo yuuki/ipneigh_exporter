@@ -3,7 +3,9 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"net"
 	"net/netip"
 	"reflect"
@@ -210,4 +212,54 @@ func TestNetlinkSourceDeliver_ReportsFalseWhenContextEndsBeforeSend(t *testing.T
 	case <-time.After(3 * time.Second):
 		t.Fatal("deliver blocked although ctx had ended")
 	}
+}
+
+// convertNeighUpdate is where kernel neighbor messages, already decoded by
+// the netlink library, become events. Non-IP families are skipped, addresses
+// that are not 4 or 16 bytes are parse errors, and everything else must come
+// through unchanged except for the IP, which is unmapped from IPv4-in-IPv6.
+func FuzzConvertNeigh(f *testing.F) {
+	f.Add(uint16(RTM_NEWNEIGH), uint8(syscall.AF_INET), false, []byte{192, 0, 2, 1}, []byte{2, 0, 0, 0, 0, 1}, int32(2), int32(0), int32(netlink.NUD_REACHABLE))
+	f.Add(uint16(RTM_DELNEIGH), uint8(syscall.AF_INET6), false, []byte(net.ParseIP("2001:db8::1")), []byte{}, int32(3), int32(7), int32(netlink.NUD_STALE))
+	f.Add(uint16(RTM_NEWNEIGH), uint8(syscall.AF_INET), false, []byte(net.ParseIP("192.0.2.1")), []byte{}, int32(2), int32(0), int32(netlink.NUD_INCOMPLETE))
+	f.Add(uint16(RTM_NEWNEIGH), uint8(syscall.AF_BRIDGE), true, []byte{}, []byte{2, 0, 0, 0, 0, 1}, int32(4), int32(5), int32(netlink.NUD_NOARP))
+	f.Add(uint16(RTM_NEWNEIGH), uint8(syscall.AF_INET), true, []byte{}, []byte{2, 0, 0, 0, 0, 1}, int32(2), int32(0), int32(0))
+	f.Add(uint16(RTM_NEWNEIGH), uint8(syscall.AF_INET6), false, []byte{0xfe, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, []byte{2, 0, 0, 0, 0, 1}, int32(2), int32(0), int32(0))
+
+	f.Fuzz(func(t *testing.T, typ uint16, family uint8, nilIP bool, ipBytes, hw []byte, link, master, state int32) {
+		n := netlink.Neigh{
+			LinkIndex: int(link), MasterIndex: int(master), Family: int(family), State: int(state),
+			IP: net.IP(ipBytes), HardwareAddr: net.HardwareAddr(hw),
+		}
+		if nilIP {
+			n.IP = nil
+		}
+		ev, err := convertNeighUpdate(netlink.NeighUpdate{Type: typ, Neigh: n})
+
+		if n.Family != syscall.AF_INET && n.Family != syscall.AF_INET6 {
+			if !errors.Is(err, errSkipNeighborEvent) {
+				t.Fatalf("family %d: err = %v, want errSkipNeighborEvent", n.Family, err)
+			}
+			return
+		}
+		if n.IP == nil || (len(n.IP) != net.IPv4len && len(n.IP) != net.IPv6len) {
+			if err == nil || errors.Is(err, errSkipNeighborEvent) {
+				t.Fatalf("IP %v: err = %v, want a parse error", []byte(n.IP), err)
+			}
+			return
+		}
+		if err != nil {
+			t.Fatalf("convert %+v: %v", n, err)
+		}
+		if !ev.IP.IsValid() || ev.IP.Is4In6() {
+			t.Fatalf("IP %v converted to %v, want a valid unmapped address", n.IP, ev.IP)
+		}
+		if !n.IP.Equal(net.IP(ev.IP.AsSlice())) {
+			t.Fatalf("IP %v converted to %v", n.IP, ev.IP)
+		}
+		if ev.Type != typ || ev.LinkIndex != n.LinkIndex || ev.MasterIndex != n.MasterIndex ||
+			ev.Family != n.Family || ev.State != n.State || !bytes.Equal(ev.HardwareAddr, hw) {
+			t.Fatalf("convert %+v (type %d) = %+v", n, typ, ev)
+		}
+	})
 }

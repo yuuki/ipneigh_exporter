@@ -1,6 +1,8 @@
 package main
 
 import (
+	"strings"
+
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -43,8 +45,8 @@ func (c *NeighborCollector) Collect(ch chan<- prometheus.Metric) {
 		if entry.Deleted {
 			continue
 		}
-		devName := entry.DevName
-		vrfName := entry.VRFName
+		devName := labelValue(entry.DevName)
+		vrfName := labelValue(entry.VRFName)
 		familyStr := familyString(key.Family)
 		stateStr := nudStateString(entry.State)
 
@@ -68,6 +70,14 @@ func (c *NeighborCollector) Collect(ch chan<- prometheus.Metric) {
 	}
 
 	c.store.CollectCounters(ch)
+}
+
+// labelValue makes a name read from the kernel usable as a label value. Linux
+// accepts interface names that are not valid UTF-8, and client_golang panics on
+// such label values, which would fail every scrape (or, from the store, crash
+// the watcher). Invalid bytes become U+FFFD; valid names are returned as is.
+func labelValue(name string) string {
+	return strings.ToValidUTF8(name, "\uFFFD")
 }
 
 func nudStateString(state int) string {

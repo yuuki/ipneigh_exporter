@@ -108,7 +108,9 @@ func main() {
 </body></html>`, *metricsPath)
 	})
 
-	server := &http.Server{Addr: *listenAddr, Handler: mux}
+	// ReadHeaderTimeout bounds how long a client may take to send its request
+	// headers, so idle or slow connections cannot pile up (Slowloris).
+	server := &http.Server{Addr: *listenAddr, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 
 	go func() {
 		<-ctx.Done()
@@ -126,7 +128,7 @@ func main() {
 		os.Exit(1)
 	}
 	select {
-	case <-watcherErrCh:
+	case <-watcherErrCh: //nolint:errcheck // the watcher goroutine has logged it; only the exit status is left
 		os.Exit(1)
 	default:
 	}

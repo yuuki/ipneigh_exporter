@@ -247,7 +247,7 @@ func (s *NeighborStore) upsertNeighborLocked(key NeighborKey, ev NeighborEvent, 
 			entry.FlapCount++
 			entry.LastFlap = now
 			familyStr := familyString(ev.Family)
-			s.flapCounter.WithLabelValues(devName, vrfName, ev.IP.String(), familyStr).Inc()
+			s.flapCounter.WithLabelValues(labelValue(devName), labelValue(vrfName), ev.IP.String(), familyStr).Inc()
 			s.eventsTotal.WithLabelValues("flap").Inc()
 			s.logger.Info("flap detected",
 				"dev", devName, "ip", ev.IP, "old_mac", oldMAC, "new_mac", newMAC)

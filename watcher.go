@@ -30,14 +30,14 @@ func (w *Watcher) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	ctx, cancel := context.WithCancel(ctx)
+	syncCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	defer w.ready.Store(false)
 
 	w.logger.Info("watching neighbor events")
 
 	if w.store.config.SyncInterval > 0 {
-		go w.runPeriodicSync(ctx)
+		go w.runPeriodicSync(syncCtx)
 	}
 
 	for {
@@ -46,6 +46,12 @@ func (w *Watcher) Run(ctx context.Context) error {
 			return ctx.Err()
 		case ev, ok := <-ch:
 			if !ok {
+				// The source also closes the channel when ctx ends. Check the
+				// ctx it was given: a derived context is cancelled only after
+				// its parent's Done channel is closed.
+				if err := ctx.Err(); err != nil {
+					return err
+				}
 				w.logger.Warn("neighbor event channel closed")
 				return errNeighborEventChannelClosed
 			}
