@@ -6,6 +6,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"go.uber.org/goleak"
 )
 
 func TestWatcher_ProcessesEvents(t *testing.T) {
@@ -309,5 +311,78 @@ func TestWatcher_PartialSyncFailureDoesNotPurge(t *testing.T) {
 	cancel()
 	if err := <-errCh; !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected context cancellation, got %v", err)
+	}
+}
+
+// Run owns the periodic sync goroutine: it must stop once Run returns because
+// ctx ended, even while it is waiting in List.
+func TestWatcher_RunStopsPeriodicSyncOnCancel(t *testing.T) {
+	defer goleak.VerifyNone(t)
+
+	store := testStore(t)
+	store.config.SyncInterval = time.Millisecond
+	source := newBlockingListSource()
+	w := NewWatcher(source, store, testLogger())
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() { errCh <- w.Run(ctx) }()
+
+	select {
+	case <-source.listStarted:
+	case <-time.After(3 * time.Second):
+		t.Fatal("periodic sync did not start")
+	}
+	cancel()
+	select {
+	case err := <-errCh:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("expected context cancellation, got %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("Run did not return after cancellation")
+	}
+}
+
+// When the source closes its channel, Run applies what was delivered before
+// the close, returns errNeighborEventChannelClosed and stops the periodic sync.
+func TestWatcher_RunStopsPeriodicSyncWhenSourceCloses(t *testing.T) {
+	defer goleak.VerifyNone(t)
+
+	store := testStore(t)
+	store.config.SyncInterval = time.Millisecond
+	events := []NeighborEvent{
+		{Type: RTM_NEWNEIGH, LinkIndex: 1, Family: syscall.AF_INET, IP: ip("10.0.0.1"), HardwareAddr: mac("aa:bb:cc:dd:ee:01"), State: NUD_REACHABLE},
+		{Type: RTM_NEWNEIGH, LinkIndex: 2, Family: syscall.AF_INET6, IP: ip("2001:db8::1"), HardwareAddr: mac("aa:bb:cc:dd:ee:02"), State: NUD_STALE},
+	}
+	w := NewWatcher(&mockSource{events: events, list: events}, store, testLogger())
+
+	done := make(chan error, 1)
+	go func() { done <- w.Run(t.Context()) }()
+	select {
+	case err := <-done:
+		if !errors.Is(err, errNeighborEventChannelClosed) {
+			t.Fatalf("expected errNeighborEventChannelClosed, got %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("Run did not return after the source closed its channel")
+	}
+	if got := len(store.Snapshot()); got != len(events) {
+		t.Fatalf("expected %d entries from the delivered events, got %d", len(events), got)
+	}
+}
+
+// NetlinkSource closes its channel when ctx ends, so at shutdown Run can find
+// both the cancellation and the closed channel ready; it must report the
+// cancellation, not a failed source (which also logs a warning).
+func TestWatcher_CancellationWinsOverSourceClose(t *testing.T) {
+	for i := range 100 {
+		ctx, cancel := context.WithCancel(t.Context())
+		cancel()
+		w := NewWatcher(&closedSource{}, testStore(t), testLogger())
+		if err := w.Run(ctx); !errors.Is(err, context.Canceled) {
+			t.Fatalf("run %d: expected context cancellation, got %v", i, err)
+		}
 	}
 }

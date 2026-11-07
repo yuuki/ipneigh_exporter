@@ -1,1 +1,4 @@
 /ipneigh_exporter
+# Test binary of make test-integration and output of make bench.
+/ipneigh_exporter.test
+/bench.txt

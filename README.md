@@ -202,10 +202,11 @@ counts.
 
 | Scenario | Behavior |
 |----------|----------|
-| Netlink buffer overflow | Events may be dropped. Exporter logs an error via ErrorCallback. State may diverge until next matching event. |
+| Netlink buffer overflow | The kernel drops events and the subscription ends with ENOBUFS: the exporter logs the error and exits with status 1. The systemd unit restarts it (`Restart=on-failure`), which reloads the neighbour table; flaps during the restart are missed. |
 | Exporter restart | Current neighbour table is loaded via `ListExisting: true`. Flap counters reset to 0 (expected for counters). |
 | High-rate flap storm | Per-key rate limiter caps counter increments. `flap_rate_limited` event counter tracks suppressed flaps. |
 | Unknown link index | Entry is dropped, `link_resolve` error counter incremented. |
+| Interface name not valid UTF-8 | Linux allows such names; invalid bytes are replaced with U+FFFD in the `dev` and `vrf` labels. |
 | CAP_NET_ADMIN missing | Netlink subscription fails at startup. Exporter exits with error. |
 
 ## Architecture
@@ -250,6 +251,12 @@ show trends, such as a component taking on too much, instead of being a target.
 code. To check locally, install cccc (a [release
 binary](https://github.com/moznion/cccc/releases) or `cargo install cccc-cli`)
 and run `make complexity`, which ranks the most complex functions.
+
+## Development
+
+See [CONTRIBUTING.md](CONTRIBUTING.md); [AGENTS.md](AGENTS.md) lists the build,
+test and lint commands (`make check` is the pre-PR gate). Security issues:
+[SECURITY.md](SECURITY.md).
 
 ## License
 
