@@ -20,7 +20,7 @@ import (
 
 // This file drives NeighborStore (and Watcher.syncOnce) with random event
 // sequences and compares it after every step with a reference model written
-// from the flap detection rules in AGENTS.md and README.md:
+// from the flap detection rules in README.md:
 //
 //   - a flap is a new MAC that differs from the remembered one, both non-empty;
 //   - an event without a MAC (INCOMPLETE) never overwrites the remembered MAC;

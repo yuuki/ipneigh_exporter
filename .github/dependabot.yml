@@ -32,5 +32,5 @@ updates:
       go-modules:
         patterns: ["*"]
     commit-message:
-      prefix: chore
+      prefix: build
       include: scope

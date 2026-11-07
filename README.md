@@ -254,9 +254,8 @@ and run `make complexity`, which ranks the most complex functions.
 
 ## Development
 
-See [CONTRIBUTING.md](CONTRIBUTING.md); [AGENTS.md](AGENTS.md) lists the build,
-test and lint commands (`make check` is the pre-PR gate). Security issues:
-[SECURITY.md](SECURITY.md).
+See [CONTRIBUTING.md](CONTRIBUTING.md) (`make check` is the pre-PR gate).
+Security issues: [SECURITY.md](SECURITY.md).
 
 ## License
 

@@ -10,8 +10,8 @@ for security issues see [SECURITY.md](SECURITY.md) instead.
 - Run `make check` before pushing; CI runs the same checks. Changes to the
   netlink code should also pass `make test-integration` (root), and the Lima
   end-to-end suite runs in CI (`make e2e` locally).
-- Commit subjects are short and scoped: `fix: ...`, `feat: ...`, `ci: ...`,
-  `docs: ...`, `chore: ...`.
+- Commits, branches and pull request titles follow the Git conventions in
+  [AGENTS.md](AGENTS.md).
 
-[AGENTS.md](AGENTS.md) lists every build, test and lint command, the
-architecture, and the contracts that must not change silently.
+[AGENTS.md](AGENTS.md) lists the contracts that must not change silently and
+the checks each kind of change needs.

@@ -1,219 +1,101 @@
 # AGENTS.md
 
-Guide for coding agents (and humans) working in this repository. README.md is
-the user-facing documentation; this file covers how the code is built, tested
-and changed.
+This file holds only what the code does not show. User-visible behaviour,
+including the flap detection rules, is specified in [README.md](README.md).
 
-## 1. Overview and architecture
+## Rules the code does not show
 
-ipneigh_exporter is a Prometheus exporter that watches the Linux kernel
-neighbour table (ARP/NDP) through rtnetlink and detects MAC address flaps. A
-background goroutine is subscribed to neighbour events; state is held in an
-in-memory map, and the gauges are computed from a snapshot at scrape time.
+- The flap detection rules (README "Flap Detection Rules") are pinned by the
+  reference model of `FuzzStoreModel` (`store_model_test.go`): change a rule,
+  the model and README together.
+- An event without a MAC (e.g. INCOMPLETE) never overwrites a stored MAC:
+  otherwise a flap across a kernel re-resolution goes undetected.
+- Counters are incremented at event time in `NeighborStore`, never at scrape
+  time; gauges are computed at scrape time from `Snapshot()`, and a scrape
+  does no netlink I/O.
+- Resolve link names under `linkMu`, before taking `mu`: the store lock is
+  never held during a netlink syscall.
+- `HandleEvent` runs for every kernel neighbour update: keep its refresh path
+  allocation-free (`BenchmarkHandleEvent_Refresh`).
+- Cardinality: `ip` appears only on flap series, never on `ipneigh_entries`.
+  Interface and VRF names become labels only through `labelValue()` (Linux
+  allows bytes that are not valid UTF-8 in them).
+- English for code, comments and docs.
 
-It runs on Linux with `CAP_NET_ADMIN` (rtnetlink neighbour subscription); the
-shipped systemd unit grants only that capability to a dynamic user.
+## Compatibility contracts
 
-Data flow: `NetlinkSource` → channel → `Watcher` → `NeighborStore.HandleEvent()`
-→ `NeighborCollector.Collect()` (on scrape).
+A change is user-visible: call it out in the PR and update README.md.
 
-- `NetlinkSource` (`source_netlink.go`): subscribes to `RTM_NEWNEIGH` /
-  `RTM_DELNEIGH` with `ListExisting: true` (the current table is loaded at
-  start), converts library updates with `convertNeigh`, skips non-IP families,
-  counts unparsable updates as `netlink_parse`, and lists the table for resyncs.
-- `Watcher` (`watcher.go`): applies events to the store, owns the periodic
-  resync (`--neighbor.sync-interval`: List, refresh, then GC), and reports
-  readiness (`/readyz` is 200 after the first event or successful sync).
-- `NeighborStore` (`store.go`): the state map keyed by `(Dev, VRF, IP,
-  Family)`, flap detection, per-key rate limiting, GC, and the counters.
-- `NeighborCollector` (`collector.go`): gauges from a `Snapshot()`; forwards the
-  store's counters.
-- `main.go`: flags, logger (`log/slog`, logfmt or JSON), HTTP server
-  (`/metrics`, `/healthz`, `/readyz`, `/`).
+- Metric names, types, labels and the closed `state`, `family`, `type` and
+  `stage` value sets: `store.go`, `collector.go`; `dashboards/` queries them.
+- CLI flags and HTTP endpoints: `main.go`.
+- Packaging: `packaging/` (the unit grants only `CAP_NET_ADMIN` to a dynamic
+  user) and the image `ghcr.io/yuuki/ipneigh_exporter` (`.goreleaser.yml`).
 
-Flap detection rules:
+## Before opening a pull request
 
-- Key: `(Dev, VRF, IP, Family)`: link index, master index, address, family.
-- Flap: old MAC and new MAC both non-empty and different.
-- Not a flap: INCOMPLETE→REACHABLE, a state-only change, a re-add with the same
-  MAC after a delete.
-- A delete keeps the MAC for `--neighbor.delete-grace`; a re-add at or after
-  the end of the grace period starts without a MAC, so it is not a flap.
-- Empty-MAC events (e.g. INCOMPLETE) never overwrite a stored MAC; this
-  prevents false negatives after kernel auto-resolution.
-- A per-key `golang.org/x/time/rate` limiter (`--neighbor.flap-burst`, 1/s)
-  caps counter increments during flap storms; suppressed flaps count as
-  `flap_rate_limited`. GC of a key also drops its limiter.
-- GC keeps deleted entries within the grace period and purges entries not seen
-  for longer than the sync interval. A failed or partial sync purges nothing.
+- `make check`.
+- `source_netlink.go` or netlink handling: also `make test-integration` (root).
+- Parsing, flap rules or label handling: also `make test-fuzz FUZZTIME=30s`;
+  commit any new failing input under `testdata/fuzz/`.
+- `e2e/run.sh`, the systemd unit or end-to-end behaviour: also `make e2e`
+  where Lima is available.
 
-## 2. Directory layout
+## Git conventions
 
-Flat `package main` at the repository root.
+Branches: `<type>/<issue>-<summary>`, or `<type>/<summary>` without an issue
+(`fix/166-connect-errors`, `feat/qp-counters`). `<type>` is a commit type
+below; `<summary>` is 2–5 lowercase ASCII words joined by `-`. Branches named
+by tools keep their names (`agent/*`, `claude/*`, `copilot/*`,
+`dependabot/*`). Never push to the default branch.
 
-| Path | Contents |
-|------|----------|
-| `main.go` | Entry point: flags, logging, HTTP server |
-| `source.go`, `source_common.go` | `NeighborEvent`, `NeighborSource` interface, shared error handling |
-| `source_netlink.go`, `nud_linux.go` | Linux: real netlink source and resolver, `unix` constants |
-| `source_stub.go`, `nud_other.go` | Non-Linux stubs so that the package compiles and unit tests run (e.g. on macOS) |
-| `store.go`, `watcher.go`, `collector.go` | State, event loop, Prometheus collector |
-| `*_test.go` | Unit, fuzz, integration (`source_netlink_integration_test.go`) tests and benchmarks (`bench_test.go`) |
-| `testdata/fuzz/` | Fuzz regression inputs (commit new crashers here) |
-| `e2e/` | Lima (Rocky Linux 9 cloud image) end-to-end suite: `lima.yaml`, `run.sh` |
-| `packaging/` | systemd unit and `/etc/default` file shipped in release archives |
-| `dashboards/` | Grafana dashboard template (checked by `dashboard_test.go`) |
-| `docs/images/` | README figures |
-| `.github/` | Workflows, Dependabot, PR template |
+Commits follow [Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/):
 
-## 3. Build
+    <type>(<scope>)!: <subject>
 
-The binary is Linux-only (Go version pinned in `go.mod`).
+    <body>
 
-```bash
-make build    # linux/amd64 binary ./ipneigh_exporter with version ldflags
-make clean
-```
+    <footer>
 
-Releases are built by GoReleaser (`.goreleaser.yml`, `Dockerfile.goreleaser`)
-from `v*` tags in `.github/workflows/release.yml`. `Dockerfile` is a local,
-self-contained image build.
+- `type`: `feat` (new user-visible behaviour), `fix` (bug fix), `perf`,
+  `refactor` (no behaviour change), `test`, `docs`, `build` (build system,
+  dependencies, packaging), `ci` (workflows), `chore` (anything else, e.g.
+  `chore(release): prepare v1.2.3`), `revert`.
+- `scope`: optional; the package or area changed: `store`, `watcher`,
+  `collector`, `netlink`, `e2e`, `packaging`, `dashboards`.
+- `!` and a `BREAKING CHANGE: <what changed and how to migrate>` footer for
+  any change to a compatibility contract above.
+- `subject`: imperative, lower case (except identifiers), no final period,
+  at most 72 characters including the prefix.
+- `body`: why the change is needed and what it affects, wrapped at 72
+  columns; required unless the subject says everything.
+- `footer`: `Fixes #N` / `Refs #N`, `BREAKING CHANGE:`, trailers such as
+  `Co-Authored-By:`.
+- One logical change per commit; regenerated files go in the commit that
+  changes their source. Pull request titles use the same format (they become
+  the squash commit).
 
-## 4. Test
+## Forbidden
 
-| Command | What | Needs |
-|---------|------|-------|
-| `make test` | Unit tests with `-race` (also runs the fuzz seed corpora) | nothing |
-| `make test-race` | Alias of `make test` | nothing |
-| `make test-fuzz` | Every fuzz target for `FUZZTIME` (default 30s); add `FUZZFLAGS=-parallel=2` on a shared machine | nothing |
-| `make test-integration` | `TestNetlinkIntegration*` against the real kernel, each in its own network namespace with a veth pair | root (runs the test binary with `sudo` unless already root); IPv6 test skips on kernels without IPv6 |
-| `make e2e` / `make e2e-teardown` | Lima VM (Rocky Linux 9) with a real exporter, veth pair and `ip neigh` changes (`e2e/run.sh`) | Lima, KVM; not run by required CI |
-| `make bench` | Benchmarks to `bench.txt` (`BENCH_COUNT`, default 6); compare with `benchstat` | nothing |
+- Disabling, skipping, deleting or weakening tests or lint rules to make
+  checks pass, or hiding failures (`|| true`, `continue-on-error`, blanket
+  excludes).
+- Vendoring dependencies; adding dependencies, test-only ones included,
+  without a stated justification.
+- Changing a compatibility contract without calling it out.
+- Loosening workflow permissions, unpinning actions, or adding caches to
+  release jobs.
+- Committing secrets, rewriting history, force-pushing, tagging or publishing
+  releases.
 
-Single test: `go test ./... -run TestHandleEvent_DifferentMAC_Flap -v`.
+## Needs human review
 
-Fuzz targets: `FuzzStoreModel` (random event/sync/GC sequences against a
-reference model of the rules in section 1), `FuzzCollectorLabelValues`
-(arbitrary interface names, IPs and MACs through store and scrape),
-`FuzzConvertNeigh` (Linux; netlink conversion contract).
+Even with green CI: `.github/`, `.goreleaser.yml`, Dockerfiles and
+`packaging/`; permissions and secrets; the netlink source and conversion code
+(privileged input path); label handling; the compatibility contracts;
+dependency additions; large refactors.
 
-Testing patterns:
+## Environment notes
 
-- `NeighborSource` and `LinkResolver` are interfaces; mocks live in
-  `source_mock_test.go`. The store's `now` field is injectable.
-- Flap limiters use the wall clock; deterministic tests use `rate.Inf` or a
-  zero rate with a fixed burst.
-- `goleak.VerifyTestMain` runs for the package: every goroutine a test starts
-  (watcher, periodic sync, forwarder, netlink reader) must end.
-- `e2e_script_test.go` and `dashboard_test.go` assert on `e2e/run.sh` and the
-  dashboard JSON, so edits to those files go through these tests.
-
-## 5. Static analysis
-
-```bash
-make lint          # golangci-lint (.golangci.yml) + go mod tidy -diff
-make fmt           # golangci-lint fmt (gofmt)
-make vet           # go vet for Linux and for GOOS=darwin (the stubs)
-make lint-actions  # actionlint + zizmor on .github/ (offline unless GH_TOKEN is set)
-make vuln          # govulncheck
-make complexity    # cccc ranking (needs cccc; CI tracks scores with octocov)
-```
-
-Tool versions are pinned at the top of the `Makefile` and in the workflows;
-bump them together.
-
-## 6. Coding conventions
-
-- Logging: `log/slog` (`newLogger` in `main.go`); per-event detail at Debug.
-- Errors: wrap with `%w`; count failures by stage with `RecordError` (the
-  `stage` label values are listed in section 7).
-- Comments and docs in English; comments say why.
-- Commits: short scoped subjects, `fix:`, `feat:`, `ci:`, `chore:`, `docs:`,
-  `test:`.
-
-## 7. Compatibility contracts
-
-Changing any of these is a user-visible change; call it out in the PR and
-update README.md.
-
-| Metric | Type | Labels | Owner |
-|--------|------|--------|-------|
-| `ipneigh_mac_change_total` | Counter | `dev`, `vrf`, `ip`, `family` | Store (event time) |
-| `ipneigh_entries` | Gauge | `dev`, `vrf`, `family`, `state` | Collector (scrape time) |
-| `ipneigh_last_flap_unix_seconds` | Gauge | `dev`, `vrf`, `ip`, `family` | Collector (scrape time) |
-| `ipneigh_events_total` | Counter | `type`: `neigh_new`, `neigh_del`, `sync`, `flap`, `flap_rate_limited`, `gc_purge` | Store (event time) |
-| `ipneigh_errors_total` | Counter | `stage`: `netlink_receive`, `netlink_parse`, `netlink_list`, `link_resolve` | Store (event time) |
-
-- `state` values: `reachable`, `stale`, `delay`, `probe`, `failed`,
-  `incomplete`, `permanent`, `noarp` (`unknown` otherwise); `family`: `ipv4`,
-  `ipv6`. Interface and VRF names go through `labelValue()`: bytes that are
-  not valid UTF-8 (Linux allows them in interface names) become U+FFFD.
-- CLI flags (`main.go`, README table): `--web.listen-address`,
-  `--web.metrics-path`, `--neighbor.device-include`, `--neighbor.device-exclude`,
-  `--neighbor.sync-interval`, `--neighbor.delete-grace`, `--neighbor.flap-burst`,
-  `--log.level`, `--log.format`, `--version`.
-- HTTP endpoints: `/metrics` (configurable), `/healthz`, `/readyz`, `/`.
-- Packaging: `packaging/ipneigh_exporter.service` (`DynamicUser=yes`,
-  `AmbientCapabilities=CAP_NET_ADMIN`) and `packaging/ipneigh_exporter.default`,
-  shipped in the release archives; image `ghcr.io/yuuki/ipneigh_exporter`.
-- `dashboards/ipneigh-exporter.json` queries the metrics above.
-
-## 8. Concurrency and resource management
-
-- Counters are incremented at event time inside `NeighborStore`, never at
-  scrape time; the collector forwards them via `CollectCounters()`.
-- Gauges are computed at scrape time from `Snapshot()` (a deep copy taken under
-  `RLock`); a scrape does no netlink I/O.
-- `resolveLink()` uses its own `linkMu`, separate from `mu`, so the store lock
-  is never held during netlink syscalls. Resolve names before taking `mu`.
-- `NetlinkSource.forward` owns the subscription: it closes `done` (ending the
-  netlink subscription) before closing its output channel, and stops when ctx
-  ends, including while blocked on a send.
-- `Watcher.Run` starts the periodic sync goroutine and cancels it when it
-  returns (it does not wait for it to finish). If the event channel closes
-  (e.g. the netlink socket overflowed with ENOBUFS), Run returns
-  `errNeighborEventChannelClosed` and `main` exits with status 1 for the
-  supervisor to restart it.
-- `NetlinkSource.List` checks ctx only between address families; netlink dumps
-  are not cancellable.
-
-## 9. Performance constraints
-
-- `HandleEvent` runs for every kernel neighbour update and must stay cheap:
-  no allocation on the refresh path (`BenchmarkHandleEvent_Refresh`), link
-  names resolved outside `mu`, and sync resolves each link once per pass.
-- Cardinality: `ip` appears only on flap series (`mac_change_total`,
-  `last_flap_unix_seconds`), never on `ipneigh_entries`; the rate limiter
-  bounds counter growth during storms; GC bounds the map.
-- The netlink channels are buffered (256); a slow consumer leads to socket
-  overflow and a restart (section 8).
-
-## 10. Before opening a PR
-
-- `make check` (lint, vet, lint-actions, race tests, build) must pass.
-- Changes to `source_netlink.go` or netlink handling: `make test-integration`
-  (root).
-- Changes to parsing, flap rules or label handling: `make test-fuzz
-  FUZZTIME=30s`; commit any new failing input under `testdata/fuzz/`.
-- Changes to the e2e script, systemd unit or end-to-end behaviour: `make e2e`
-  where Lima is available (CI runs it as a separate workflow).
-- Keep README.md and this file in sync with behaviour changes.
-
-## 11. Rules for AI agents
-
-Do not:
-
-- disable, skip, delete or weaken tests or lint rules to make checks pass, or
-  hide failures (`|| true`, `continue-on-error`, blanket excludes);
-- edit generated or tool-managed files by hand, or vendor dependencies;
-- add dependencies without a stated justification (test-only ones included);
-- change the public contracts of section 7 without calling it out;
-- loosen workflow permissions, unpin actions, or add caches to release jobs;
-- commit secrets, rewrite history, force-push, tag or publish releases.
-
-## 12. Changes that need human review
-
-Even with green CI: workflow, release and packaging files (`.github/`,
-`.goreleaser.yml`, Dockerfiles, `packaging/`), permissions and secrets, the
-netlink source and conversion code (privileged input path), label handling,
-the public contracts of section 7, dependency additions, and large refactors.
+- With `GH_TOKEN` set but the GitHub API unreachable, run
+  `env -u GH_TOKEN make check`.
