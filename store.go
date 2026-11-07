@@ -32,6 +32,10 @@ type NeighborEntry struct {
 	Deleted   bool
 	DeletedAt time.Time
 	FlapCount uint64
+
+	// eventSeq is the store's eventSeq when an event last updated the entry
+	// (0 if none did): a sync whose dump was taken earlier leaves it alone.
+	eventSeq uint64
 }
 
 type StoreConfig struct {
@@ -51,6 +55,7 @@ type NeighborStore struct {
 	mu           sync.RWMutex
 	entries      map[NeighborKey]*NeighborEntry
 	flapLimiters map[NeighborKey]*rate.Limiter
+	eventSeq     uint64 // events applied so far, under mu
 
 	linkMu sync.Mutex
 
@@ -111,6 +116,7 @@ func (s *NeighborStore) HandleEvent(ev NeighborEvent) {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.eventSeq++
 
 	if ev.Type == RTM_DELNEIGH {
 		s.eventsTotal.WithLabelValues("neigh_del").Inc()
@@ -119,19 +125,40 @@ func (s *NeighborStore) HandleEvent(ev NeighborEvent) {
 			entry.DeletedAt = now
 			entry.LastSeen = now
 			entry.State = ev.State
+			entry.eventSeq = s.eventSeq
 		}
 		return
 	}
 
-	s.upsertNeighborLocked(key, ev, devName, vrfName, now, true)
+	entry := s.upsertNeighborLocked(key, ev, devName, vrfName, now, true)
+	entry.eventSeq = s.eventSeq
 }
 
+// syncStart is taken when a sync starts listing the kernel table: the time
+// its dump is applied at, and the last event the store had applied. Events
+// applied later may be newer than the dump.
+type syncStart struct {
+	now      time.Time
+	eventSeq uint64
+}
+
+func (s *NeighborStore) beginSync() syncStart {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return syncStart{now: s.now(), eventSeq: s.eventSeq}
+}
+
+// SyncNeighbors applies a dump that was listed before the call, so after
+// every event applied so far.
 func (s *NeighborStore) SyncNeighbors(events []NeighborEvent) bool {
-	now := s.now()
-	return s.syncNeighborsAt(events, now)
+	return s.syncNeighborsAt(events, s.beginSync())
 }
 
-func (s *NeighborStore) syncNeighborsAt(events []NeighborEvent, now time.Time) bool {
+// syncNeighborsAt applies a dump of the kernel table listed since start. An
+// entry that an event updated after start is newer than the dump, which
+// would otherwise count a flap back to an older MAC or undo a delete, so the
+// dump leaves it alone.
+func (s *NeighborStore) syncNeighborsAt(events []NeighborEvent, start syncStart) bool {
 	ok := true
 	linkNames := make(map[int]string)
 
@@ -155,7 +182,9 @@ func (s *NeighborStore) syncNeighborsAt(events []NeighborEvent, now time.Time) b
 		}
 
 		s.mu.Lock()
-		s.upsertNeighborLocked(key, ev, devName, vrfName, now, false)
+		if entry, exists := s.entries[key]; !exists || entry.eventSeq <= start.eventSeq {
+			s.upsertNeighborLocked(key, ev, devName, vrfName, start.now, false)
+		}
 		s.mu.Unlock()
 	}
 	if ok {
@@ -208,21 +237,22 @@ func (s *NeighborStore) resolveLinkCached(index int, cache map[int]string) strin
 	return name
 }
 
-func (s *NeighborStore) upsertNeighborLocked(key NeighborKey, ev NeighborEvent, devName, vrfName string, now time.Time, countNew bool) {
+func (s *NeighborStore) upsertNeighborLocked(key NeighborKey, ev NeighborEvent, devName, vrfName string, now time.Time, countNew bool) *NeighborEntry {
 	if countNew {
 		s.eventsTotal.WithLabelValues("neigh_new").Inc()
 	}
 
 	entry, exists := s.entries[key]
 	if !exists {
-		s.entries[key] = &NeighborEntry{
+		entry = &NeighborEntry{
 			MAC:      ev.HardwareAddr,
 			State:    ev.State,
 			DevName:  devName,
 			VRFName:  vrfName,
 			LastSeen: now,
 		}
-		return
+		s.entries[key] = entry
+		return entry
 	}
 
 	oldMAC := entry.MAC
@@ -255,6 +285,7 @@ func (s *NeighborStore) upsertNeighborLocked(key NeighborKey, ev NeighborEvent, 
 			s.eventsTotal.WithLabelValues("flap_rate_limited").Inc()
 		}
 	}
+	return entry
 }
 
 func (s *NeighborStore) Snapshot() map[NeighborKey]*NeighborEntry {

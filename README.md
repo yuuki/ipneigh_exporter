@@ -123,7 +123,7 @@ Labels: `stage` — values: `netlink_receive`, `netlink_parse`, `netlink_list`, 
 
 A flap is detected when:
 
-1. A `RTM_NEWNEIGH` event arrives for a known key
+1. A `RTM_NEWNEIGH` event, or an entry of a periodic resync, arrives for a known key
 2. Both the previous MAC and new MAC are non-empty
 3. The MACs differ
 
@@ -133,6 +133,11 @@ The following are NOT flaps:
 - State-only changes with the same MAC
 - Re-creation after deletion with the same MAC (within grace period)
 - Re-creation after deletion with a different MAC (after grace period expired — old MAC is forgotten)
+- A resync entry for a key that an event updated while the resync was reading the kernel table (below)
+
+### Resync and Events
+
+A resync (`--neighbor.sync-interval`) reads the whole kernel table while events keep arriving, so an event handled meanwhile can be newer than what the resync read. A resync therefore leaves every key that an event updated after the resync started reading as that event set it: a stale resync entry never counts a flap back to an older MAC and never brings back a deleted entry.
 
 ### Rate Limiting
 
