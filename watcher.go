@@ -76,15 +76,17 @@ func (w *Watcher) runPeriodicSync(ctx context.Context) {
 }
 
 func (w *Watcher) syncOnce(ctx context.Context) {
-	syncTime := w.store.now()
+	// Before List: Run keeps applying events while the dump is in flight,
+	// and those may be newer than the dump.
+	start := w.store.beginSync()
 	events, err := w.source.List(ctx)
 	if err != nil {
 		w.store.RecordError("netlink_list")
 		w.logger.Error("neighbor sync failed", "error", err)
 		return
 	}
-	if w.store.syncNeighborsAt(events, syncTime) {
-		w.store.gcAt(syncTime)
+	if w.store.syncNeighborsAt(events, start) {
+		w.store.gcAt(start.now)
 	}
 	w.ready.Store(true)
 }

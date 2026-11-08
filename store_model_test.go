@@ -30,7 +30,11 @@ import (
 //   - GC keeps deleted entries within the grace period and purges entries not
 //     seen for longer than SyncInterval;
 //   - a sync that fails to list, or that cannot resolve a device, purges
-//     nothing.
+//     nothing;
+//   - a sync applies a dump taken when it started listing, at that time:
+//     a key that an event updated while the dump was in flight is newer than
+//     the dump, so the sync leaves it alone (no flap, no undoing a delete, no
+//     refresh).
 //
 // Flap limiting is made deterministic with rate.Inf (no limit) or rate 0
 // (a burst that is never refilled): the store's limiters use the wall clock.
@@ -87,6 +91,10 @@ type storeModel struct {
 	now     time.Time
 	ready   bool
 	entries map[NeighborKey]*modelEntry
+	// While a sync's dump is in flight: when the sync started and the keys
+	// an event updated since (nil otherwise).
+	syncAt  time.Time
+	touched map[NeighborKey]bool
 	tokens  map[NeighborKey]int // flaps left per key under rate 0
 	flaps   map[[4]string]float64
 	events  map[string]float64
@@ -116,25 +124,25 @@ func (m *storeModel) allowFlap(key NeighborKey) bool {
 	return true
 }
 
-func (m *storeModel) upsert(key NeighborKey, ev NeighborEvent, devName, vrfName string, countNew bool) {
+func (m *storeModel) upsert(key NeighborKey, ev NeighborEvent, devName, vrfName string, now time.Time, countNew bool) {
 	if countNew {
 		m.events["neigh_new"]++
 	}
 	newMAC := string(ev.HardwareAddr)
 	e, ok := m.entries[key]
 	if !ok {
-		m.entries[key] = &modelEntry{mac: newMAC, state: ev.State, devName: devName, vrfName: vrfName, lastSeen: m.now}
+		m.entries[key] = &modelEntry{mac: newMAC, state: ev.State, devName: devName, vrfName: vrfName, lastSeen: now}
 		return
 	}
 	oldMAC := e.mac
-	if e.deleted && !m.now.Before(e.deletedAt.Add(m.grace)) {
+	if e.deleted && !now.Before(e.deletedAt.Add(m.grace)) {
 		oldMAC, e.mac = "", ""
 	}
 	e.deleted = false
 	if newMAC != "" {
 		e.mac = newMAC
 	}
-	e.state, e.devName, e.vrfName, e.lastSeen = ev.State, devName, vrfName, m.now
+	e.state, e.devName, e.vrfName, e.lastSeen = ev.State, devName, vrfName, now
 	if oldMAC == "" || newMAC == "" || oldMAC == newMAC {
 		return
 	}
@@ -143,7 +151,7 @@ func (m *storeModel) upsert(key NeighborKey, ev NeighborEvent, devName, vrfName 
 		return
 	}
 	e.flapCount++
-	e.lastFlap = m.now
+	e.lastFlap = now
 	m.flaps[[4]string{devName, vrfName, ev.IP.String(), familyString(ev.Family)}]++
 	m.events["flap"]++
 }
@@ -162,13 +170,30 @@ func (m *storeModel) handle(ev NeighborEvent) {
 		m.events["neigh_del"]++
 		if e, ok := m.entries[key]; ok {
 			e.deleted, e.deletedAt, e.lastSeen, e.state = true, m.now, m.now, ev.State
+			m.touch(key)
 		}
 		return
 	}
-	m.upsert(key, ev, devName, modelNames[ev.MasterIndex], true)
+	m.upsert(key, ev, devName, modelNames[ev.MasterIndex], m.now, true)
+	m.touch(key)
+}
+
+// touch records that an event updated key while a sync's dump is in flight.
+func (m *storeModel) touch(key NeighborKey) {
+	if m.touched != nil {
+		m.touched[key] = true
+	}
+}
+
+// listing starts a sync: its dump is taken now, then events may update the
+// store before sync applies it.
+func (m *storeModel) listing() {
+	m.syncAt, m.touched = m.now, map[NeighborKey]bool{}
 }
 
 func (m *storeModel) sync(list []NeighborEvent, listErr bool) {
+	touched := m.touched
+	m.touched = nil
 	if listErr {
 		m.errors["netlink_list"]++
 		return
@@ -185,21 +210,24 @@ func (m *storeModel) sync(list []NeighborEvent, listErr bool) {
 			continue
 		}
 		key := NeighborKey{Dev: ev.LinkIndex, VRF: ev.MasterIndex, IP: ev.IP, Family: ev.Family}
-		m.upsert(key, ev, devName, modelNames[ev.MasterIndex], false)
+		if touched[key] {
+			continue // an event newer than the dump
+		}
+		m.upsert(key, ev, devName, modelNames[ev.MasterIndex], m.syncAt, false)
 	}
 	if ok {
 		m.events["sync"]++
-		m.gc()
+		m.gc(m.syncAt)
 	}
 	m.ready = true
 }
 
-func (m *storeModel) gc() {
+func (m *storeModel) gc(now time.Time) {
 	for key, e := range m.entries {
-		if e.deleted && m.now.Sub(e.deletedAt) <= m.grace {
+		if e.deleted && now.Sub(e.deletedAt) <= m.grace {
 			continue
 		}
-		if m.now.Sub(e.lastSeen) > modelSync {
+		if now.Sub(e.lastSeen) > modelSync {
 			delete(m.entries, key)
 			delete(m.tokens, key)
 			m.events["gc_purge"]++
@@ -246,7 +274,10 @@ func FuzzStoreModel(f *testing.F) {
 	// Config byte: bit 0 rate 0 (else rate.Inf), bits 1-2 burst, bit 3
 	// include ^eth, bit 4 exclude ^eth1$, bit 5 long grace. Key byte k: dev k%3, VRF (k/3)%3,
 	// IP (k/9)%3. Then opNew key nud mac, opDel key nud, opAdvance step,
-	// opSync n errByte (key nud mac)*n, opGC.
+	// opSync n errByte (key nud mac)*n op*m, opGC. In opSync, errByte%4 == 1
+	// fails the list and m = (errByte/4)%4 operations (opNew, opNewAgain,
+	// opDel or opAdvance with their arguments) happen while the dump is in
+	// flight, after it was taken.
 	const (
 		cfgInf, cfgRate0Burst1, cfgRate0Burst2, cfgLongGrace = 0x00, 0x03, 0x05, 0x20
 		mac1, mac2, mac3, noMAC                              = 1, 2, 3, 0
@@ -266,6 +297,12 @@ func FuzzStoreModel(f *testing.F) {
 		"filters and other keys":     {0x18, opNew, 1, reachable, mac1, opNew, 3, reachable, mac2, opNew, 4, reachable, mac1, opNew, 9, reachable, mac3, opNew, 18, reachable, mac2},
 		"gc keeps deleted in grace":  {cfgLongGrace, opNew, key, reachable, mac1, opDel, key, 0, opAdvance, 5, opAdvance, 5, opGC, opAdvance, 1, opGC},
 		"purge resets the limiter":   {cfgRate0Burst1, opNew, key, reachable, mac1, opNew, key, reachable, mac2, opNew, key, reachable, mac3, opAdvance, 7, opGC, opNew, key, reachable, mac1, opNew, key, reachable, mac2},
+		// The dump of these syncs still shows mac1 when an event changes or
+		// deletes the entry (errByte 4: one operation while listing).
+		"stale dump after a flap":   {cfgInf, opNew, key, reachable, mac1, opSync, 1, 4, key, reachable, mac1, opNew, key, reachable, mac2, opNew, key, reachable, mac2},
+		"stale dump after a delete": {cfgInf, opNew, key, reachable, mac1, opSync, 1, 4, key, reachable, mac1, opDel, key, 0, opGC},
+		"stale dump, failed list":   {cfgInf, opNew, key, reachable, mac1, opSync, 1, 5, key, reachable, mac1, opNew, key, reachable, mac2},
+		"clock moves while listing": {cfgInf, opNew, key, reachable, mac1, opNew, 1, reachable, mac1, opAdvance, 5, opSync, 2, 8, key, reachable, mac2, 1, reachable, mac3, opAdvance, 2, opNew, 1, reachable, mac2, opGC},
 	}
 	for _, step := range []int{3, 4} { // re-add just before and at the end of the grace period
 		seeds[fmt.Sprintf("delete grace step %d", step)] = append(append([]byte{cfgInf, opNew, key, reachable, mac1, opDel, key, 0}, advance(step)...), opNew, key, reachable, mac2, opGC)
@@ -312,24 +349,32 @@ func FuzzStoreModel(f *testing.F) {
 		source := &channelSource{}
 		watcher := NewWatcher(source, store, testLogger())
 
+		// eventOrAdvance reads the arguments of an event or a clock step and
+		// applies it to the model and the store.
+		eventOrAdvance := func(op int) string {
+			if op == opAdvance {
+				d := steps[r.pick(len(steps))]
+				m.now = m.now.Add(d)
+				return fmt.Sprintf("advance %v", d)
+			}
+			typ := uint16(RTM_NEWNEIGH)
+			if op == opDel {
+				typ = RTM_DELNEIGH
+			}
+			ev := r.event(typ)
+			m.handle(ev)
+			store.HandleEvent(ev)
+			return fmt.Sprintf("event %+v", ev)
+		}
+
 		for step := 0; step < 64 && len(r.data) > 0; step++ {
 			var desc string
 			switch op := r.pick(opCount); op {
-			case opNew, opNewAgain, opDel:
-				typ := uint16(RTM_NEWNEIGH)
-				if op == opDel {
-					typ = RTM_DELNEIGH
-				}
-				ev := r.event(typ)
-				desc = fmt.Sprintf("event %+v", ev)
-				m.handle(ev)
-				store.HandleEvent(ev)
-			case opAdvance:
-				d := steps[r.pick(len(steps))]
-				desc = fmt.Sprintf("advance %v", d)
-				m.now = m.now.Add(d)
+			case opNew, opNewAgain, opDel, opAdvance:
+				desc = eventOrAdvance(op)
 			case opSync:
-				n, listErr := r.pick(4), r.next()%4 == 1
+				n, errByte := r.pick(4), r.next()
+				listErr, inFlight := errByte%4 == 1, (errByte/4)%4
 				source.list, source.listErr = nil, nil
 				for range n {
 					source.list = append(source.list, r.event(RTM_NEWNEIGH))
@@ -337,12 +382,21 @@ func FuzzStoreModel(f *testing.F) {
 				if listErr {
 					source.listErr = errors.New("list failed")
 				}
-				desc = fmt.Sprintf("sync %+v (list error %v)", source.list, listErr)
-				m.sync(source.list, listErr)
+				// List returns the dump taken when it started; meanwhile the
+				// watcher handles events and the clock moves on.
+				var during []string
+				source.duringList = func() {
+					for range inFlight {
+						during = append(during, eventOrAdvance(r.pick(opAdvance+1)))
+					}
+				}
+				m.listing()
 				watcher.syncOnce(t.Context())
+				m.sync(source.list, listErr)
+				desc = fmt.Sprintf("sync %+v (list error %v) while %v", source.list, listErr, during)
 			case opGC:
 				desc = "gc"
-				m.gc()
+				m.gc(m.now)
 				store.gc()
 			}
 			if err := compareStore(m, store, watcher); err != nil {

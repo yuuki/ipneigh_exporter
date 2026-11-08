@@ -58,6 +58,10 @@ type channelSource struct {
 	ch      <-chan NeighborEvent
 	list    []NeighborEvent
 	listErr error
+	// duringList, if set, runs inside List after the dump (list) was taken:
+	// it stands for the events the watcher handles while the dump is in
+	// flight, which list does not reflect.
+	duringList func()
 }
 
 func (s *channelSource) Subscribe(_ context.Context) (<-chan NeighborEvent, error) {
@@ -65,6 +69,9 @@ func (s *channelSource) Subscribe(_ context.Context) (<-chan NeighborEvent, erro
 }
 
 func (s *channelSource) List(_ context.Context) ([]NeighborEvent, error) {
+	if s.duringList != nil {
+		s.duringList()
+	}
 	if s.listErr != nil {
 		return nil, s.listErr
 	}

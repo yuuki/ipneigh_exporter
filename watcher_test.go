@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"go.uber.org/goleak"
 )
 
@@ -385,4 +386,65 @@ func TestWatcher_CancellationWinsOverSourceClose(t *testing.T) {
 			t.Fatalf("run %d: expected context cancellation, got %v", i, err)
 		}
 	}
+}
+
+// A periodic sync lists the kernel table while Run keeps handling events, so
+// an event handled while the dump is in flight is newer than the dump. The
+// stale dump entry must not undo it: applied afterwards, it would count a flap
+// back to the old MAC (and the next event a third one for a single change), or
+// bring back an entry the kernel deleted.
+func TestWatcher_SyncDoesNotApplyDumpOlderThanEvents(t *testing.T) {
+	const macA, macB, macC = "aa:bb:cc:dd:ee:01", "aa:bb:cc:dd:ee:02", "aa:bb:cc:dd:ee:03"
+	key := NeighborKey{Dev: 1, IP: ip("10.0.0.1"), Family: syscall.AF_INET}
+	newNeigh := func(hw string) NeighborEvent {
+		return NeighborEvent{Type: RTM_NEWNEIGH, LinkIndex: 1, Family: syscall.AF_INET, IP: key.IP, HardwareAddr: mac(hw), State: NUD_REACHABLE}
+	}
+	flaps := func(s *NeighborStore) float64 {
+		return counterValue(s.flapCounter, "eth0", "", "10.0.0.1", "ipv4")
+	}
+
+	t.Run("MAC change while listing", func(t *testing.T) {
+		store := testStore(t)
+		store.HandleEvent(newNeigh(macA))
+		// The dump still shows A; the kernel moves the IP to B and that
+		// event is handled before the dump is applied: one real change.
+		source := &channelSource{list: []NeighborEvent{newNeigh(macA)}}
+		source.duringList = func() { store.HandleEvent(newNeigh(macB)) }
+		w := NewWatcher(source, store, testLogger())
+
+		w.syncOnce(t.Context())
+		if e := store.Snapshot()[key]; e == nil || e.MAC.String() != macB || e.FlapCount != 1 {
+			t.Fatalf("after the sync: entry %+v, want MAC %s and 1 flap", e, macB)
+		}
+		store.HandleEvent(newNeigh(macB))
+		if got := flaps(store); got != 1 {
+			t.Fatalf("one MAC change counted %v flaps, want 1", got)
+		}
+
+		// A sync that starts listing after the event applies its dump.
+		source.duringList = nil
+		source.list = []NeighborEvent{newNeigh(macC)}
+		w.syncOnce(t.Context())
+		if e := store.Snapshot()[key]; e == nil || e.MAC.String() != macC || flaps(store) != 2 {
+			t.Fatalf("after a current sync: entry %+v and %v flaps, want MAC %s and 2 flaps", e, flaps(store), macC)
+		}
+	})
+
+	t.Run("delete while listing", func(t *testing.T) {
+		store := testStore(t)
+		store.HandleEvent(newNeigh(macA))
+		source := &channelSource{list: []NeighborEvent{newNeigh(macA)}}
+		source.duringList = func() {
+			store.HandleEvent(NeighborEvent{Type: RTM_DELNEIGH, LinkIndex: 1, Family: syscall.AF_INET, IP: key.IP, State: NUD_FAILED})
+		}
+		w := NewWatcher(source, store, testLogger())
+
+		w.syncOnce(t.Context())
+		if e := store.Snapshot()[key]; e == nil || !e.Deleted || e.State != NUD_FAILED {
+			t.Fatalf("after the sync: entry %+v, want it deleted in state failed", e)
+		}
+		if n := testutil.CollectAndCount(NewNeighborCollector(store), "ipneigh_entries"); n != 0 {
+			t.Fatalf("ipneigh_entries has %d series, want none for a deleted entry", n)
+		}
+	})
 }

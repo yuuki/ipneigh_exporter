@@ -412,10 +412,12 @@ func TestSyncThenPurgeUsesConsistentTime(t *testing.T) {
 	})
 
 	syncTime := baseTime.Add(2 * time.Minute)
+	start := s.beginSync()
+	start.now = syncTime
 	s.syncNeighborsAt([]NeighborEvent{{
 		Type: RTM_NEWNEIGH, LinkIndex: 1, Family: syscall.AF_INET,
 		IP: ip("10.0.0.1"), HardwareAddr: mac("aa:bb:cc:dd:ee:01"), State: NUD_REACHABLE,
-	}}, syncTime)
+	}}, start)
 	s.gcAt(syncTime)
 
 	key := NeighborKey{Dev: 1, IP: ip("10.0.0.1"), Family: syscall.AF_INET}
