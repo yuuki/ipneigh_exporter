@@ -1,9 +1,9 @@
 {
   "repository": "yuuki/ipneigh_exporter/complexity",
   "ref": "refs/heads/main",
-  "commit": "9f0f994a93f186e3d59e20008be1399ce2ebc852",
+  "commit": "4b9df4ddba8f33f5a156a0b1f03045217efe1125",
   "base_ref": "refs/heads/main",
-  "timestamp": "2026-11-07T11:26:56.208589584Z",
+  "timestamp": "2026-11-08T04:21:46.661835564Z",
   "custom_metrics": [
     {
       "key": "code_complexity",
@@ -12,12 +12,12 @@
         {
           "key": "function_count",
           "name": "Function count",
-          "value": 49
+          "value": 50
         },
         {
           "key": "cognitive_sum",
           "name": "Cognitive: total",
-          "value": 109
+          "value": 112
         },
         {
           "key": "cognitive_max",
@@ -37,7 +37,7 @@
         {
           "key": "cyclomatic_sum",
           "name": "Cyclomatic: total",
-          "value": 143
+          "value": 146
         },
         {
           "key": "cyclomatic_max",
