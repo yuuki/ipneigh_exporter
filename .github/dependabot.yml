@@ -7,8 +7,8 @@
 # the Go version of go.mod.
 version: 2
 updates:
-  # Also updates the commit SHAs the workflows pin actions to, and their
-  # version comments.
+  # Also updates .github/workflows/actions.lock, which pins the commit of each
+  # action the workflows use.
   - package-ecosystem: github-actions
     directory: /
     schedule:
