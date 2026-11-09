@@ -1,9 +1,9 @@
 {
   "repository": "yuuki/ipneigh_exporter/complexity",
   "ref": "refs/heads/main",
-  "commit": "4b9df4ddba8f33f5a156a0b1f03045217efe1125",
+  "commit": "824345eda2f2fca83f9f89bf2b1338c2346e4aad",
   "base_ref": "refs/heads/main",
-  "timestamp": "2026-11-08T04:21:46.661835564Z",
+  "timestamp": "2026-11-09T16:34:04.266429381Z",
   "custom_metrics": [
     {
       "key": "code_complexity",
